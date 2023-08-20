@@ -50,57 +50,72 @@ impl UpdateResetFlow {
             return Err(CaliptraError::ROM_UPDATE_RESET_FLOW_MAILBOX_ACCESS_FAILURE);
         };
 
-        if recv_txn.cmd() != Self::MBOX_DOWNLOAD_FIRMWARE_CMD_ID {
-            cprintln!("Invalid command 0x{:08x} received", recv_txn.cmd());
-            return Err(CaliptraError::ROM_UPDATE_RESET_FLOW_INVALID_FIRMWARE_COMMAND);
+        match recv_txn.cmd() {
+            Self::MBOX_DOWNLOAD_FIRMWARE_CMD_ID => {
+                let manifest = Self::load_manifest(&mut recv_txn)?;
+                report_boot_status(UpdateResetLoadManifestComplete.into());
+
+                let mut venv = RomImageVerificationEnv {
+                    sha256: &mut env.sha256,
+                    sha384: &mut env.sha384,
+                    sha384_acc: &mut env.sha384_acc,
+                    soc_ifc: &mut env.soc_ifc,
+                    ecc384: &mut env.ecc384,
+                    data_vault: &mut env.data_vault,
+                    pcr_bank: &mut env.pcr_bank,
+                };
+
+                let info = Self::verify_image(&mut venv, &manifest, recv_txn.dlen());
+                let info = okref(&info)?;
+                report_boot_status(UpdateResetImageVerificationComplete.into());
+
+                // Extend PCR0 and PCR1
+                pcr::extend_pcrs(&mut venv, info)?;
+                report_boot_status(UpdateResetExtendPcrComplete.into());
+
+                cprintln!(
+                    "[update-reset] Image verified using Vendor ECC Key Index {}",
+                    info.vendor_ecc_pub_key_idx
+                );
+
+                // Populate data vault
+                Self::populate_data_vault(venv.data_vault, info);
+
+                Self::load_image(&manifest, &mut recv_txn)?;
+
+                // Drop the transaction and release the Mailbox lock after the image
+                // has been successfully verified and loaded in memory
+                drop(recv_txn);
+                report_boot_status(UpdateResetLoadImageComplete.into());
+
+                Self::copy_regions();
+                report_boot_status(UpdateResetOverwriteManifestComplete.into());
+
+                // Set RT version. FMC does not change.
+                env.soc_ifc.set_rt_fw_rev_id(manifest.runtime.version);
+
+                cprintln!("[update-reset Success] --");
+                report_boot_status(UpdateResetComplete.into());
+
+                Ok(None)
+            }
+            0x4650_4C54 => {
+                cprintln!("Fips self test  0x{:08x} received", recv_txn.cmd());
+                ImageManifestVerifier::verify()?;
+                //Call the complete here to reset the execute bit
+                recv_txn.complete(true)?;
+
+                // Drop the transaction and release the Mailbox lock after the image
+                // has been successfully verified in ICCM.
+                drop(recv_txn);
+
+                Ok(None)
+            }
+            _ => {
+                cprintln!("Invalid command 0x{:08x} received", recv_txn.cmd());
+                Err(CaliptraError::ROM_UPDATE_RESET_FLOW_INVALID_FIRMWARE_COMMAND)
+            }
         }
-
-        let manifest = Self::load_manifest(&mut recv_txn)?;
-        report_boot_status(UpdateResetLoadManifestComplete.into());
-
-        let mut venv = RomImageVerificationEnv {
-            sha256: &mut env.sha256,
-            sha384: &mut env.sha384,
-            sha384_acc: &mut env.sha384_acc,
-            soc_ifc: &mut env.soc_ifc,
-            ecc384: &mut env.ecc384,
-            data_vault: &mut env.data_vault,
-            pcr_bank: &mut env.pcr_bank,
-        };
-
-        let info = Self::verify_image(&mut venv, &manifest, recv_txn.dlen());
-        let info = okref(&info)?;
-        report_boot_status(UpdateResetImageVerificationComplete.into());
-
-        // Extend PCR0 and PCR1
-        pcr::extend_pcrs(&mut venv, info)?;
-        report_boot_status(UpdateResetExtendPcrComplete.into());
-
-        cprintln!(
-            "[update-reset] Image verified using Vendor ECC Key Index {}",
-            info.vendor_ecc_pub_key_idx
-        );
-
-        // Populate data vault
-        Self::populate_data_vault(venv.data_vault, info);
-
-        Self::load_image(&manifest, &mut recv_txn)?;
-
-        // Drop the transaction and release the Mailbox lock after the image
-        // has been successfully verified and loaded in memory
-        drop(recv_txn);
-        report_boot_status(UpdateResetLoadImageComplete.into());
-
-        Self::copy_regions();
-        report_boot_status(UpdateResetOverwriteManifestComplete.into());
-
-        // Set RT version. FMC does not change.
-        env.soc_ifc.set_rt_fw_rev_id(manifest.runtime.version);
-
-        cprintln!("[update-reset Success] --");
-        report_boot_status(UpdateResetComplete.into());
-
-        Ok(None)
     }
 
     /// Verify the image
@@ -217,5 +232,22 @@ impl UpdateResetFlow {
         data_vault.write_warm_reset_entry4(WarmResetEntry4::RtEntryPoint, info.runtime.entry_point);
 
         report_boot_status(UpdateResetPopulateDataVaultComplete.into());
+    }
+}
+
+struct ImageManifestVerifier;
+
+impl ImageManifestVerifier {
+    fn load_from_iccm() -> CaliptraResult<ImageManifest> {
+        let manifest_slice = unsafe {
+            let ptr = MAN1_ORG as *mut u32;
+            core::slice::from_raw_parts_mut(ptr, core::mem::size_of::<ImageManifest>() / 4)
+        };
+        ImageManifest::read_from(manifest_slice.as_bytes())
+            .ok_or(CaliptraError::ROM_UPDATE_RESET_FLOW_MANIFEST_READ_FAILURE)
+    }
+    pub fn verify() -> CaliptraResult<()> {
+        let _ = Self::load_from_iccm()?;
+        Ok(())
     }
 }

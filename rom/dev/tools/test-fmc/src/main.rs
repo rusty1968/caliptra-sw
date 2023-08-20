@@ -227,6 +227,9 @@ fn process_mailbox_command(mbox: &caliptra_registers::mbox::RegisterBlock<RealMm
         0x1000_0007 => {
             try_to_reset_pcrs(mbox);
         }
+        0x4650_4C54 => {
+            fips_self_test(mbox);
+        }
         _ => {}
     }
 }
@@ -267,6 +270,13 @@ fn read_datavault_coldresetentry4(mbox: &caliptra_registers::mbox::RegisterBlock
 
 fn trigger_update_reset(mbox: &caliptra_registers::mbox::RegisterBlock<RealMmioMut>) {
     mbox.status().write(|w| w.status(|w| w.cmd_complete()));
+    const STDOUT: *mut u32 = 0x3003_0624 as *mut u32;
+    unsafe {
+        ptr::write_volatile(STDOUT, 1_u32);
+    }
+}
+
+fn fips_self_test(mbox: &caliptra_registers::mbox::RegisterBlock<RealMmioMut>) {
     const STDOUT: *mut u32 = 0x3003_0624 as *mut u32;
     unsafe {
         ptr::write_volatile(STDOUT, 1_u32);

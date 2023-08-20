@@ -61,6 +61,52 @@ fn test_update_reset_success() {
 }
 
 #[test]
+fn test_verify_from_iccm() {
+    let fuses = Fuses::default();
+    let rom = caliptra_builder::build_firmware_rom(&ROM_WITH_UART).unwrap();
+    let mut hw = caliptra_hw_model::new(BootParams {
+        init_params: InitParams {
+            rom: &rom,
+            security_state: SecurityState::from(fuses.life_cycle as u32),
+            ..Default::default()
+        },
+        fuses,
+        ..Default::default()
+    })
+    .unwrap();
+
+    const VAL_TEST_FMC_WITH_UART: FwId = FwId {
+        crate_name: "caliptra-rom-test-fmc",
+        bin_name: "caliptra-rom-test-fmc",
+        features: &["emu", "val-fmc"],
+        workspace_dir: None,
+    };
+
+    let image_bundle = caliptra_builder::build_and_sign_image(
+        &VAL_TEST_FMC_WITH_UART,
+        &APP_WITH_UART,
+        ImageOptions::default(),
+    )
+    .unwrap();
+
+    hw.upload_firmware(&image_bundle.to_bytes().unwrap())
+        .unwrap();
+
+    hw.step_until_boot_status(ColdResetComplete.into(), true);
+
+    hw.mailbox_execute(0x4650_4C54, &[]).unwrap();
+
+    hw.step_until_boot_status(KatStarted.into(), true);
+    hw.step_until_boot_status(KatComplete.into(), true);
+    hw.step_until_boot_status(UpdateResetStarted.into(), false);
+
+    assert_eq!(
+        hw.soc_ifc().cptra_boot_status().read(),
+        UpdateResetStarted.into()
+    );
+}
+
+#[test]
 fn test_update_reset_no_mailbox_cmd() {
     pub const TEST_FMC_WITH_UART: FwId = FwId {
         crate_name: "caliptra-rom-test-fmc",
