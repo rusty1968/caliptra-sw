@@ -32,7 +32,7 @@ pub(crate) struct RomImageVerificationEnv<'a> {
 
 impl<'a> ImageVerificationEnv for &mut RomImageVerificationEnv<'a> {
     /// Calculate Digest using SHA-384 Accelerator
-    fn sha384_digest(&mut self, offset: u32, len: u32) -> CaliptraResult<ImageDigest> {
+    fn sha384_acc_digest(&mut self, offset: u32, len: u32) -> CaliptraResult<ImageDigest> {
         loop {
             if let Some(mut txn) = self.sha384_acc.try_start_operation() {
                 let mut digest = Array4x12::default();
