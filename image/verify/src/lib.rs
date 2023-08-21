@@ -19,7 +19,7 @@ use caliptra_drivers::*;
 use caliptra_image_types::*;
 use core::ops::Range;
 
-pub use verifier::ImageVerifier;
+pub use verifier::{ImageVerifier, VerifyReason};
 
 pub const MAX_RUNTIME_SVN: u32 = 128;
 

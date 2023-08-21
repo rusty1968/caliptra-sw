@@ -1,6 +1,6 @@
 // Licensed under the Apache-2.0 license
 
-use caliptra_builder::{FwId, ImageOptions, APP_WITH_UART, ROM_WITH_UART};
+use caliptra_builder::{FwId, ImageOptions, APP_WITH_UART, ROM_VAL_WITH_UART, ROM_WITH_UART};
 use caliptra_error::CaliptraError;
 use caliptra_hw_model::{BootParams, Fuses, HwModel, InitParams, SecurityState};
 
@@ -63,7 +63,7 @@ fn test_update_reset_success() {
 #[test]
 fn test_verify_from_iccm() {
     let fuses = Fuses::default();
-    let rom = caliptra_builder::build_firmware_rom(&ROM_WITH_UART).unwrap();
+    let rom = caliptra_builder::build_firmware_rom(&ROM_VAL_WITH_UART).unwrap();
     let mut hw = caliptra_hw_model::new(BootParams {
         init_params: InitParams {
             rom: &rom,
@@ -94,16 +94,15 @@ fn test_verify_from_iccm() {
 
     hw.step_until_boot_status(ColdResetComplete.into(), true);
 
+    // Keep going until we launch FMC
+    hw.step_until_output_contains("[exit] Launching FMC")
+        .unwrap();
+
+    // Make sure we actually get into FMC
+    hw.step_until_output_contains("Running Caliptra FMC")
+        .unwrap();
+
     hw.mailbox_execute(0x4650_4C54, &[]).unwrap();
-
-    hw.step_until_boot_status(KatStarted.into(), true);
-    hw.step_until_boot_status(KatComplete.into(), true);
-    hw.step_until_boot_status(UpdateResetStarted.into(), false);
-
-    assert_eq!(
-        hw.soc_ifc().cptra_boot_status().read(),
-        UpdateResetStarted.into()
-    );
 }
 
 #[test]

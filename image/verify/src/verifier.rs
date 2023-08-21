@@ -21,6 +21,13 @@ use memoffset::offset_of;
 
 const ZERO_DIGEST: ImageDigest = [0u32; SHA384_DIGEST_WORD_SIZE];
 
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum VerifyReason {
+    ColdBoot,
+    ImageUpdate,
+    FipsSelfTest,
+}
+
 /// Header Info
 struct HeaderInfo<'a> {
     vendor_ecc_pub_key_idx: u32,
@@ -68,7 +75,7 @@ impl<Env: ImageVerificationEnv> ImageVerifier<Env> {
     ///
     /// * `manifest` - Image Manifest
     /// * `image`    - Image to verify
-    /// * `reason`   - Reset Reason
+    /// * `reason`   - Verify Reason
     ///
     /// # Returns
     ///
@@ -77,7 +84,7 @@ impl<Env: ImageVerificationEnv> ImageVerifier<Env> {
         &mut self,
         manifest: &ImageManifest,
         img_bundle_sz: u32,
-        reason: ResetReason,
+        reason: VerifyReason,
     ) -> CaliptraResult<ImageVerificationInfo> {
         // Check if manifest has required marker
         if manifest.marker != MANIFEST_MARKER {
@@ -133,7 +140,7 @@ impl<Env: ImageVerificationEnv> ImageVerifier<Env> {
     fn verify_preamble<'a>(
         &mut self,
         preamble: &'a ImagePreamble,
-        reason: ResetReason,
+        reason: VerifyReason,
     ) -> CaliptraResult<HeaderInfo<'a>> {
         // Verify Vendor Public Key Digest
         self.verify_vendor_pk_digest()?;
@@ -209,7 +216,7 @@ impl<Env: ImageVerificationEnv> ImageVerifier<Env> {
     fn verify_vendor_ecc_pk_idx(
         &mut self,
         preamble: &ImagePreamble,
-        reason: ResetReason,
+        reason: VerifyReason,
     ) -> CaliptraResult<(u32, VendorPubKeyRevocation)> {
         const SECOND_LAST_KEY_IDX: u32 = VENDOR_ECC_KEY_COUNT - 2;
         const LAST_KEY_IDX: u32 = SECOND_LAST_KEY_IDX + 1;
@@ -230,7 +237,7 @@ impl<Env: ImageVerificationEnv> ImageVerifier<Env> {
             _ => Err(CaliptraError::IMAGE_VERIFIER_ERR_VENDOR_ECC_PUB_KEY_INDEX_OUT_OF_BOUNDS)?,
         }
 
-        if reason == ResetReason::UpdateReset {
+        if reason == VerifyReason::ImageUpdate {
             let expected = self.env.vendor_pub_key_idx_dv();
             if expected != key_idx {
                 Err(CaliptraError::IMAGE_VERIFIER_ERR_UPDATE_RESET_VENDOR_PUB_KEY_IDX_MISMATCH)?;
@@ -244,7 +251,7 @@ impl<Env: ImageVerificationEnv> ImageVerifier<Env> {
     fn verify_vendor_lms_pk_idx(
         &mut self,
         preamble: &ImagePreamble,
-        _reason: ResetReason,
+        _reason: VerifyReason,
     ) -> CaliptraResult<(Option<u32>, Option<u32>)> {
         const SECOND_LAST_KEY_IDX: u32 = VENDOR_LMS_KEY_COUNT - 2;
         const LAST_KEY_IDX: u32 = SECOND_LAST_KEY_IDX + 1;
@@ -307,7 +314,7 @@ impl<Env: ImageVerificationEnv> ImageVerifier<Env> {
     /// Verify owner public key digest
     fn verify_owner_pk_digest(
         &mut self,
-        reason: ResetReason,
+        reason: VerifyReason,
     ) -> CaliptraResult<Option<ImageDigest>> {
         let range = ImageManifest::owner_pub_key_range();
 
@@ -322,7 +329,7 @@ impl<Env: ImageVerificationEnv> ImageVerifier<Env> {
             Err(CaliptraError::IMAGE_VERIFIER_ERR_OWNER_PUB_KEY_DIGEST_MISMATCH)?;
         }
 
-        if reason == ResetReason::UpdateReset {
+        if reason == VerifyReason::ImageUpdate {
             let cold_boot_digest = self.env.owner_pub_key_digest_dv();
             if cold_boot_digest != actual {
                 return Err(CaliptraError::IMAGE_VERIFIER_ERR_UPDATE_RESET_OWNER_DIGEST_FAILURE);
@@ -560,7 +567,7 @@ impl<Env: ImageVerificationEnv> ImageVerifier<Env> {
     fn verify_fmc(
         &mut self,
         verify_info: &ImageTocEntry,
-        reason: ResetReason,
+        reason: VerifyReason,
     ) -> CaliptraResult<(ImageVerificationExeInfo, ImageSvnLogInfo)> {
         let range = verify_info.image_range();
 
@@ -609,7 +616,7 @@ impl<Env: ImageVerificationEnv> ImageVerifier<Env> {
         let effective_fuse_svn =
             Self::effective_fuse_svn(self.env.fmc_fuse_svn(), self.env.anti_rollback_disable());
 
-        if reason == ResetReason::UpdateReset && actual != self.env.get_fmc_digest_dv() {
+        if reason == VerifyReason::ImageUpdate && actual != self.env.get_fmc_digest_dv() {
             Err(CaliptraError::IMAGE_VERIFIER_ERR_UPDATE_RESET_FMC_DIGEST_MISMATCH)?;
         }
 
@@ -773,7 +780,7 @@ mod tests {
         let mut verifier = ImageVerifier::new(test_env);
         let preamble = ImagePreamble::default();
 
-        let result = verifier.verify_vendor_ecc_pk_idx(&preamble, ResetReason::UpdateReset);
+        let result = verifier.verify_vendor_ecc_pk_idx(&preamble, VerifyReason::ImageUpdate);
         assert!(result.is_ok());
     }
 
@@ -790,7 +797,7 @@ mod tests {
             ..Default::default()
         };
 
-        let result = verifier.verify_vendor_ecc_pk_idx(&preamble, ResetReason::UpdateReset);
+        let result = verifier.verify_vendor_ecc_pk_idx(&preamble, VerifyReason::ImageUpdate);
         assert_eq!(
             result.err(),
             Some(CaliptraError::IMAGE_VERIFIER_ERR_UPDATE_RESET_VENDOR_PUB_KEY_IDX_MISMATCH)
@@ -810,7 +817,7 @@ mod tests {
         let mut verifier = ImageVerifier::new(test_env);
         let preamble = ImagePreamble::default();
 
-        let result = verifier.verify_preamble(&preamble, ResetReason::UpdateReset);
+        let result = verifier.verify_preamble(&preamble, VerifyReason::ImageUpdate);
         assert!(result.is_ok());
     }
 
@@ -835,7 +842,7 @@ mod tests {
             ..Default::default()
         };
 
-        let result = verifier.verify_fmc(&verify_info, ResetReason::UpdateReset);
+        let result = verifier.verify_fmc(&verify_info, VerifyReason::ImageUpdate);
         assert!(result.is_ok());
     }
 
@@ -858,7 +865,7 @@ mod tests {
             ..Default::default()
         };
 
-        let result = verifier.verify_fmc(&verify_info, ResetReason::UpdateReset);
+        let result = verifier.verify_fmc(&verify_info, VerifyReason::ImageUpdate);
         assert_eq!(
             result.err(),
             Some(CaliptraError::IMAGE_VERIFIER_ERR_UPDATE_RESET_FMC_DIGEST_MISMATCH)
@@ -879,7 +886,7 @@ mod tests {
         let mut verifier = ImageVerifier::new(test_env);
         let preamble = ImagePreamble::default();
 
-        let result = verifier.verify_preamble(&preamble, ResetReason::UpdateReset);
+        let result = verifier.verify_preamble(&preamble, VerifyReason::ImageUpdate);
         assert!(result.is_ok());
     }
 
@@ -887,7 +894,7 @@ mod tests {
     fn test_manifest_marker() {
         let manifest = ImageManifest::default();
         let mut verifier = ImageVerifier::new(TestEnv::default());
-        let result = verifier.verify(&manifest, manifest.size, ResetReason::ColdReset);
+        let result = verifier.verify(&manifest, manifest.size, VerifyReason::ColdBoot);
         assert!(result.is_err());
         assert_eq!(
             result.err(),
@@ -903,7 +910,7 @@ mod tests {
             ..Default::default()
         };
         let mut verifier = ImageVerifier::new(TestEnv::default());
-        let result = verifier.verify(&manifest, manifest.size, ResetReason::ColdReset);
+        let result = verifier.verify(&manifest, manifest.size, VerifyReason::ColdBoot);
         assert!(result.is_err());
         assert_eq!(
             result.err(),
@@ -919,7 +926,7 @@ mod tests {
             ..Default::default()
         };
         let mut verifier = ImageVerifier::new(test_env);
-        let result = verifier.verify_preamble(&preamble, ResetReason::ColdReset);
+        let result = verifier.verify_preamble(&preamble, VerifyReason::ColdBoot);
         assert!(result.is_err());
         assert_eq!(
             result.err(),
@@ -939,7 +946,7 @@ mod tests {
         let mut verifier = ImageVerifier::new(test_env);
         let preamble = ImagePreamble::default();
 
-        let result = verifier.verify_preamble(&preamble, ResetReason::ColdReset);
+        let result = verifier.verify_preamble(&preamble, VerifyReason::ColdBoot);
         assert!(result.is_ok());
     }
 
@@ -953,7 +960,7 @@ mod tests {
         };
         let mut verifier = ImageVerifier::new(test_env);
         let preamble = ImagePreamble::default();
-        let result = verifier.verify_preamble(&preamble, ResetReason::ColdReset);
+        let result = verifier.verify_preamble(&preamble, VerifyReason::ColdBoot);
         assert_eq!(
             result.err(),
             Some(CaliptraError::IMAGE_VERIFIER_ERR_VENDOR_PUB_KEY_DIGEST_MISMATCH)
@@ -1575,7 +1582,7 @@ mod tests {
             ..Default::default()
         };
 
-        let result = verifier.verify_fmc(&verify_info, ResetReason::ColdReset);
+        let result = verifier.verify_fmc(&verify_info, VerifyReason::ColdBoot);
         assert_eq!(
             result.err(),
             Some(CaliptraError::IMAGE_VERIFIER_ERR_FMC_LOAD_ADDR_INVALID)
@@ -1588,7 +1595,7 @@ mod tests {
             ..Default::default()
         };
 
-        let result = verifier.verify_fmc(&verify_info, ResetReason::ColdReset);
+        let result = verifier.verify_fmc(&verify_info, VerifyReason::ColdBoot);
         assert_eq!(result.err(), None);
     }
 
@@ -1600,7 +1607,7 @@ mod tests {
             digest: DUMMY_DATA,
             ..Default::default()
         };
-        let result = verifier.verify_fmc(&verify_info, ResetReason::ColdReset);
+        let result = verifier.verify_fmc(&verify_info, VerifyReason::ColdBoot);
         assert_eq!(
             result.err(),
             Some(CaliptraError::IMAGE_VERIFIER_ERR_FMC_DIGEST_MISMATCH)
@@ -1619,7 +1626,7 @@ mod tests {
             ..Default::default()
         };
 
-        let result = verifier.verify_fmc(&verify_info, ResetReason::ColdReset);
+        let result = verifier.verify_fmc(&verify_info, VerifyReason::ColdBoot);
         assert!(result.is_ok());
         let (info, _log_info) = result.unwrap();
         assert_eq!(info.load_addr, ICCM_ORG);

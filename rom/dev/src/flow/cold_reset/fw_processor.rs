@@ -22,7 +22,9 @@ use caliptra_cfi_lib::{cfi_assert, cfi_assert_eq, cfi_launder};
 use caliptra_common::{cprint, memory_layout::MAN1_ORG, FuseLogEntryId, RomBootStatus::*};
 use caliptra_drivers::*;
 use caliptra_image_types::{ImageManifest, IMAGE_BYTE_SIZE};
-use caliptra_image_verify::{ImageVerificationInfo, ImageVerificationLogInfo, ImageVerifier};
+use caliptra_image_verify::{
+    ImageVerificationInfo, ImageVerificationLogInfo, ImageVerifier, VerifyReason,
+};
 use caliptra_x509::{NotAfter, NotBefore};
 use core::mem::ManuallyDrop;
 use zerocopy::{AsBytes, FromBytes};
@@ -204,7 +206,7 @@ impl FirmwareProcessor {
         };
 
         let mut verifier = ImageVerifier::new(venv);
-        let info = verifier.verify(manifest, img_bundle_sz, ResetReason::ColdReset)?;
+        let info = verifier.verify(manifest, img_bundle_sz, VerifyReason::ColdBoot)?;
 
         cprintln!(
             "[afmc] Image verified using Vendor ECC Key Index {}",

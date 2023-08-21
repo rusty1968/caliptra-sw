@@ -75,6 +75,8 @@ pub enum RomBootStatus {
     UpdateResetLoadImageComplete = UPDATE_RESET_BOOT_STATUS_BASE + 5,
     UpdateResetOverwriteManifestComplete = UPDATE_RESET_BOOT_STATUS_BASE + 6,
     UpdateResetComplete = UPDATE_RESET_BOOT_STATUS_BASE + 7,
+    FipsSelfTestStarted = UPDATE_RESET_BOOT_STATUS_BASE + 8,
+    FipsSelfTestComplete = UPDATE_RESET_BOOT_STATUS_BASE + 9,
 
     // ROM Global Boot Statues
     KatStarted = ROM_GLOBAL_BOOT_STATUS_BASE,
