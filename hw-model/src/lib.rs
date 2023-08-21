@@ -188,7 +188,7 @@ pub struct BootParams<'a> {
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum ModelError {
-    MailboxCmdFailed(u32),
+    MailboxCmdFailed(u32, u32),
     UnableToLockMailbox,
     BufferTooLargeForMailbox,
     UploadFirmwareUnexpectedResponse,
@@ -204,7 +204,9 @@ impl Error for ModelError {}
 impl Display for ModelError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ModelError::MailboxCmdFailed(err) => write!(f, "Mailbox command failed. fw_err={err}"),
+            ModelError::MailboxCmdFailed(err, status) => {
+                write!(f, "Mailbox command failed. fw_err={err}, bs = {status}")
+            }
             ModelError::UnableToLockMailbox => write!(f, "Unable to lock mailbox"),
             ModelError::BufferTooLargeForMailbox => write!(f, "Buffer too large for mailbox"),
             ModelError::UploadFirmwareUnexpectedResponse => {
@@ -675,6 +677,7 @@ pub trait HwModel {
                 } else {
                     soc_ifc.cptra_fw_error_non_fatal().read()
                 },
+                soc_ifc.cptra_boot_status().read(),
             ));
         }
         if status.cmd_complete() {

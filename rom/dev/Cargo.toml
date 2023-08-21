@@ -51,6 +51,8 @@ std = [
 no-fmc = []
 val-rom = []
 no-cfi = []
+verilator = ["caliptra-hw-model/verilator"]
+
 
 [[bin]]
 name = "asm_tests"

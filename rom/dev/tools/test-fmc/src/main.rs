@@ -278,6 +278,8 @@ fn trigger_update_reset(mbox: &caliptra_registers::mbox::RegisterBlock<RealMmioM
 
 fn fips_self_test() {
     const STDOUT: *mut u32 = 0x3003_0624 as *mut u32;
+
+    fips_self_test_util::copy_image_to_mbox();
     unsafe {
         ptr::write_volatile(STDOUT, 1_u32);
     }
@@ -424,5 +426,44 @@ fn send_to_mailbox(
     if update_mb_state {
         mbox.dlen().write(|_| data_len as u32);
         mbox.status().write(|w| w.status(|w| w.data_ready()));
+    }
+}
+
+mod fips_self_test_util {
+    use caliptra_common::{FMC_ORG, RUNTIME_ORG};
+    use caliptra_drivers::memory_layout::{MAN1_ORG, MBOX_ORG};
+    use caliptra_image_types::ImageManifest;
+    use zerocopy::{AsBytes, FromBytes};
+
+    unsafe fn copy_bytes(src: *const u8, dst: *mut u8, count: usize) {
+        for i in 0..count {
+            *dst.add(i) = *src.add(i);
+        }
+    }
+
+    pub(crate) fn copy_image_to_mbox() {
+        let mbox_ptr = MBOX_ORG as *mut u8;
+        let man1_ptr = MAN1_ORG as *const u8;
+
+        let fmc_org = FMC_ORG as *mut u8;
+        let rt_org = RUNTIME_ORG as *const u8;
+
+        let manifest_slice = unsafe {
+            let ptr = MAN1_ORG as *mut u32;
+            core::slice::from_raw_parts_mut(ptr, core::mem::size_of::<ImageManifest>() / 4)
+        };
+        let manifest = ImageManifest::read_from(manifest_slice.as_bytes())
+            .ok_or(0xdead)
+            .unwrap();
+
+        unsafe {
+            let mut offset = 0;
+            copy_bytes(man1_ptr, mbox_ptr.add(offset), manifest.as_bytes().len());
+
+            offset += manifest.as_bytes().len();
+            copy_bytes(fmc_org, mbox_ptr.add(offset), manifest.fmc.size as usize);
+            offset += manifest.fmc.size as usize;
+            copy_bytes(rt_org, mbox_ptr.add(offset), manifest.runtime.size as usize);
+        }
     }
 }

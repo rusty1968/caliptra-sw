@@ -15,10 +15,10 @@ Abstract:
 use core::num::NonZeroU32;
 
 use crate::*;
+use caliptra_common::RomBootStatus::*;
 use caliptra_drivers::*;
 use caliptra_image_types::*;
 use memoffset::offset_of;
-
 const ZERO_DIGEST: ImageDigest = [0u32; SHA384_DIGEST_WORD_SIZE];
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -96,19 +96,27 @@ impl<Env: ImageVerificationEnv> ImageVerifier<Env> {
             Err(CaliptraError::IMAGE_VERIFIER_ERR_MANIFEST_SIZE_MISMATCH)?;
         }
 
+        caliptra_drivers::report_boot_status(VerifyPreambleStarted.into());
+
         // Verify the preamble
         let preamble = &manifest.preamble;
         let header_info = self.verify_preamble(preamble, reason);
         let header_info = okref(&header_info)?;
 
+        caliptra_drivers::report_boot_status(VerifyPreambleComplete.into());
+
+        caliptra_drivers::report_boot_status(VerifyHeaderStarted.into());
         // Verify Header
         let header = &manifest.header;
         let toc_info = self.verify_header(header, header_info);
         let toc_info = okref(&toc_info)?;
+        caliptra_drivers::report_boot_status(VerifyHeaderComplete.into());
 
+        caliptra_drivers::report_boot_status(VerifyTocStarted.into());
         // Verify TOC
         let image_info = self.verify_toc(manifest, toc_info, img_bundle_sz);
         let image_info = okref(&image_info)?;
+        caliptra_drivers::report_boot_status(VerifyTocComplete.into());
 
         // Verify FMC
         let (fmc_info, fmc_log_info) = self.verify_fmc(image_info.fmc, reason)?;

@@ -17,8 +17,8 @@ fn test_unknown_command_is_fatal() {
 
     // This command does not exist
     assert_eq!(
-        hw.mailbox_execute(0xabcd_1234, &[]),
-        Err(ModelError::MailboxCmdFailed(0))
+        hw.mailbox_execute(0xabcd_1234, &[]).unwrap_err(),
+        ModelError::MailboxCmdFailed(0, hw.soc_ifc().cptra_boot_status().read())
     );
 
     hw.step_until_fatal_error(
@@ -32,10 +32,11 @@ fn test_mailbox_command_aborted_after_handle_fatal_error() {
     let (mut hw, image_bundle) =
         helpers::build_hw_model_and_image_bundle(Fuses::default(), ImageOptions::default());
     assert_eq!(
-        Err(ModelError::MailboxCmdFailed(
-            CaliptraError::FW_PROC_INVALID_IMAGE_SIZE.into()
-        )),
-        hw.upload_firmware(&[])
+        ModelError::MailboxCmdFailed(
+            CaliptraError::FW_PROC_INVALID_IMAGE_SIZE.into(),
+            hw.soc_ifc().cptra_boot_status().read()
+        ),
+        hw.upload_firmware(&[]).unwrap_err()
     );
 
     // Make sure a new attempt to upload firmware is rejected (even though this
@@ -43,9 +44,11 @@ fn test_mailbox_command_aborted_after_handle_fatal_error() {
     //
     // The original failure reason should still be in the register
     assert_eq!(
-        hw.upload_firmware(&image_bundle.to_bytes().unwrap()),
-        Err(ModelError::MailboxCmdFailed(
-            CaliptraError::FW_PROC_INVALID_IMAGE_SIZE.into()
-        ))
+        hw.upload_firmware(&image_bundle.to_bytes().unwrap())
+            .unwrap_err(),
+        ModelError::MailboxCmdFailed(
+            CaliptraError::FW_PROC_INVALID_IMAGE_SIZE.into(),
+            hw.soc_ifc().cptra_boot_status().read()
+        )
     );
 }

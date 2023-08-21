@@ -25,7 +25,7 @@ use caliptra_drivers::{
     okref, report_boot_status, MailboxRecvTxn, WarmResetEntry4, WarmResetEntry48,
 };
 use caliptra_error::{CaliptraError, CaliptraResult};
-use caliptra_image_types::ImageManifest;
+use caliptra_image_types::{ImageManifest, MANIFEST_MARKER};
 use caliptra_image_verify::{ImageVerificationInfo, ImageVerifier, VerifyReason};
 use zerocopy::{AsBytes, FromBytes};
 
@@ -104,6 +104,11 @@ impl UpdateResetFlow {
                 cprintln!("Fips self test  0x{:08x} received", recv_txn.cmd());
                 report_boot_status(FipsSelfTestStarted.into());
                 let manifest = image_manifest_loader::load_from_iccm()?;
+
+                cprintln!("Check if manifest has required marker");
+                if manifest.marker != MANIFEST_MARKER {
+                    Err(CaliptraError::IMAGE_VERIFIER_ERR_MANIFEST_MARKER_MISMATCH)?;
+                }
 
                 let info = Self::verify_image(
                     &mut venv,
@@ -247,13 +252,15 @@ impl UpdateResetFlow {
 }
 
 mod image_manifest_loader {
+
     use super::*;
     pub fn load_from_iccm() -> CaliptraResult<ImageManifest> {
         let manifest_slice = unsafe {
             let ptr = MAN1_ORG as *mut u32;
             core::slice::from_raw_parts_mut(ptr, core::mem::size_of::<ImageManifest>() / 4)
         };
-        ImageManifest::read_from(manifest_slice.as_bytes())
-            .ok_or(CaliptraError::ROM_UPDATE_RESET_FLOW_MANIFEST_READ_FAILURE)
+        let manifest = ImageManifest::read_from(manifest_slice.as_bytes())
+            .ok_or(CaliptraError::ROM_UPDATE_RESET_FLOW_MANIFEST_READ_FAILURE);
+        manifest
     }
 }

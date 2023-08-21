@@ -14,9 +14,10 @@ caliptra-drivers.workspace = true
 caliptra-image-types = { workspace = true, default-features = false }
 memoffset.workspace = true
 zerocopy.workspace = true
+caliptra_common = { path = "../../common", default-features = false }
 
 [dev-dependencies]
-caliptra_common = { path = "../../common", default-features = false }
+#caliptra_common = { path = "../../common", default-features = false }
 
 [features]
 default = ["std"]

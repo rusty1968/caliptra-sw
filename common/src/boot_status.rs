@@ -19,6 +19,7 @@ const FMCALIAS_BOOT_STATUS_BASE: u32 = 193;
 const COLD_RESET_BOOT_STATUS_BASE: u32 = 257;
 const UPDATE_RESET_BOOT_STATUS_BASE: u32 = 321;
 const ROM_GLOBAL_BOOT_STATUS_BASE: u32 = 385;
+const VERIFIER_BOOT_STATUS_BASE: u32 = 417;
 
 /// Statuses used by ROM to log dice derivation progress.
 #[repr(u32)]
@@ -81,6 +82,13 @@ pub enum RomBootStatus {
     // ROM Global Boot Statues
     KatStarted = ROM_GLOBAL_BOOT_STATUS_BASE,
     KatComplete = ROM_GLOBAL_BOOT_STATUS_BASE + 1,
+
+    VerifyPreambleStarted = VERIFIER_BOOT_STATUS_BASE,
+    VerifyPreambleComplete = VERIFIER_BOOT_STATUS_BASE + 1,
+    VerifyHeaderStarted = VERIFIER_BOOT_STATUS_BASE + 2,
+    VerifyHeaderComplete = VERIFIER_BOOT_STATUS_BASE + 3,
+    VerifyTocStarted = VERIFIER_BOOT_STATUS_BASE + 4,
+    VerifyTocComplete = VERIFIER_BOOT_STATUS_BASE + 5,
 }
 
 impl From<RomBootStatus> for u32 {

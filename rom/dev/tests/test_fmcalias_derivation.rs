@@ -24,7 +24,10 @@ fn test_zero_firmware_size() {
     // Zero-sized firmware.
     assert_eq!(
         hw.upload_firmware(&[]).unwrap_err(),
-        ModelError::MailboxCmdFailed(CaliptraError::FW_PROC_INVALID_IMAGE_SIZE.into())
+        ModelError::MailboxCmdFailed(
+            CaliptraError::FW_PROC_INVALID_IMAGE_SIZE.into(),
+            hw.soc_ifc().cptra_boot_status().read()
+        )
     );
     assert_eq!(
         hw.soc_ifc().cptra_fw_error_fatal().read(),
