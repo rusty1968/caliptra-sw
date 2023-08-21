@@ -61,7 +61,7 @@ fn test_update_reset_success() {
 }
 
 #[test]
-fn test_verify_from_iccm() {
+fn test_fips_verify() {
     let fuses = Fuses::default();
     let rom = caliptra_builder::build_firmware_rom(&ROM_VAL_WITH_UART).unwrap();
     let mut hw = caliptra_hw_model::new(BootParams {

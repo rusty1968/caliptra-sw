@@ -1000,7 +1000,7 @@ mod tests {
         // Send command that returns failure
         assert_eq!(
             model.mailbox_execute(0x4000_0000, &message),
-            Err(ModelError::MailboxCmdFailed(0))
+            Err(ModelError::MailboxCmdFailed(0, 0))
         );
     }
 

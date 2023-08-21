@@ -1,9 +1,12 @@
 // Licensed under the Apache-2.0 license
 
-use caliptra_builder::{ImageOptions, APP_WITH_UART, FMC_WITH_UART, ROM_WITH_UART};
+use caliptra_builder::{
+    FwId, ImageOptions, APP_WITH_UART, FMC_WITH_UART, ROM_VAL_WITH_UART, ROM_WITH_UART,
+};
 use caliptra_common::mailbox_api::{
     CommandId, GetLdevCertResp, MailboxReqHeader, MailboxRespHeader, TestGetFmcAliasCertResp,
 };
+use caliptra_common::RomBootStatus::*;
 use caliptra_hw_model::{BootParams, HwModel, InitParams, SecurityState};
 use caliptra_hw_model_types::{DeviceLifecycle, Fuses};
 use caliptra_test::{
@@ -361,4 +364,52 @@ fn smoke_test() {
     );
 
     // TODO: Validate the rest of the fmc_alias certificate fields
+}
+
+#[test]
+fn test_fips_verify() {
+    let fuses = Fuses::default();
+    let rom = caliptra_builder::build_firmware_rom(&ROM_VAL_WITH_UART).unwrap();
+    let mut hw = caliptra_hw_model::new(BootParams {
+        init_params: InitParams {
+            rom: &rom,
+            security_state: SecurityState::from(fuses.life_cycle as u32),
+            ..Default::default()
+        },
+        fuses,
+        ..Default::default()
+    })
+    .unwrap();
+
+    const VAL_TEST_FMC_WITH_UART: FwId = FwId {
+        crate_name: "caliptra-rom-test-fmc",
+        bin_name: "caliptra-rom-test-fmc",
+        features: &["emu", "val-fmc"],
+        workspace_dir: None,
+    };
+
+    let image_bundle = caliptra_builder::build_and_sign_image(
+        &VAL_TEST_FMC_WITH_UART,
+        &APP_WITH_UART,
+        ImageOptions::default(),
+    )
+    .unwrap();
+
+    hw.tracing_hint(false);
+
+    hw.upload_firmware(&image_bundle.to_bytes().unwrap())
+        .unwrap();
+
+    hw.step_until_boot_status(ColdResetComplete.into(), true);
+
+    // Keep going until we launch FMC
+    hw.step_until_output_contains("[exit] Launching FMC")
+        .unwrap();
+
+    // Make sure we actually get into FMC
+    hw.step_until_output_contains("Running Caliptra FMC")
+        .unwrap();
+
+    hw.tracing_hint(true);
+    hw.mailbox_execute(0x4650_4C54, &[]).unwrap();
 }

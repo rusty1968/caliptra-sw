@@ -228,7 +228,7 @@ fn process_mailbox_command(mbox: &caliptra_registers::mbox::RegisterBlock<RealMm
             try_to_reset_pcrs(mbox);
         }
         0x4650_4C54 => {
-            fips_self_test();
+            fips_self_test(mbox);
         }
         _ => {}
     }
@@ -269,17 +269,16 @@ fn read_datavault_coldresetentry4(mbox: &caliptra_registers::mbox::RegisterBlock
 }
 
 fn trigger_update_reset(mbox: &caliptra_registers::mbox::RegisterBlock<RealMmioMut>) {
-    mbox.status().write(|w| w.status(|w| w.cmd_complete()));
     const STDOUT: *mut u32 = 0x3003_0624 as *mut u32;
     unsafe {
         ptr::write_volatile(STDOUT, 1_u32);
     }
 }
 
-fn fips_self_test() {
+fn fips_self_test(mbox: &caliptra_registers::mbox::RegisterBlock<RealMmioMut>) {
     const STDOUT: *mut u32 = 0x3003_0624 as *mut u32;
 
-    fips_self_test_util::copy_image_to_mbox();
+    let _ = fips_self_test_util::copy_image_to_mbox(mbox);
     unsafe {
         ptr::write_volatile(STDOUT, 1_u32);
     }
@@ -430,24 +429,49 @@ fn send_to_mailbox(
 }
 
 mod fips_self_test_util {
-    use caliptra_common::{FMC_ORG, RUNTIME_ORG};
-    use caliptra_drivers::memory_layout::{MAN1_ORG, MBOX_ORG};
+    use caliptra_common::{FMC_ORG, FMC_SIZE, RUNTIME_ORG, RUNTIME_SIZE};
+    use caliptra_drivers::memory_layout::MAN1_ORG;
     use caliptra_image_types::ImageManifest;
-    use zerocopy::{AsBytes, FromBytes};
+    use zerocopy::{AsBytes, FromBytes, LayoutVerified, Unalign};
 
-    unsafe fn copy_bytes(src: *const u8, dst: *mut u8, count: usize) {
-        for i in 0..count {
-            *dst.add(i) = *src.add(i);
+    // Helper function to create a mutable slice from a memory region
+    unsafe fn create_slice(org: u32, size: usize) -> &'static mut [u8] {
+        let ptr = org as *mut u8;
+        core::slice::from_raw_parts_mut(ptr, size)
+    }
+
+    /// Set the length of the current mailbox data in bytes
+    pub fn set_dlen(mbox: &caliptra_registers::mbox::RegisterBlock<ureg::RealMmioMut>, len: u32) {
+        mbox.dlen().write(|_| len);
+    }
+
+    fn copy_to_mbox(
+        mbox: &caliptra_registers::mbox::RegisterBlock<ureg::RealMmioMut>,
+        buf: &[Unalign<u32>],
+    ) {
+        for word in buf {
+            mbox.datain().write(|_| word.get());
         }
     }
 
-    pub(crate) fn copy_image_to_mbox() {
-        let mbox_ptr = MBOX_ORG as *mut u8;
-        let man1_ptr = MAN1_ORG as *const u8;
+    pub fn write_response(
+        mbox: &caliptra_registers::mbox::RegisterBlock<ureg::RealMmioMut>,
+        buf: &[u8],
+    ) -> Result<(), u32> {
+        let (buf_words, suffix) =
+            LayoutVerified::new_slice_unaligned_from_prefix(buf, buf.len() / 4).unwrap();
+        copy_to_mbox(mbox, &buf_words);
+        if !suffix.is_empty() {
+            let mut last_word = 0_u32;
+            last_word.as_bytes_mut()[..suffix.len()].copy_from_slice(suffix);
+            copy_to_mbox(mbox, &[Unalign::new(last_word)]);
+        }
+        Ok(())
+    }
 
-        let fmc_org = FMC_ORG as *mut u8;
-        let rt_org = RUNTIME_ORG as *const u8;
-
+    pub(crate) fn copy_image_to_mbox(
+        mbox: &caliptra_registers::mbox::RegisterBlock<ureg::RealMmioMut>,
+    ) -> Result<(), u32> {
         let manifest_slice = unsafe {
             let ptr = MAN1_ORG as *mut u32;
             core::slice::from_raw_parts_mut(ptr, core::mem::size_of::<ImageManifest>() / 4)
@@ -456,14 +480,13 @@ mod fips_self_test_util {
             .ok_or(0xdead)
             .unwrap();
 
-        unsafe {
-            let mut offset = 0;
-            copy_bytes(man1_ptr, mbox_ptr.add(offset), manifest.as_bytes().len());
+        let fmc = unsafe { create_slice(FMC_ORG, manifest.fmc.size as usize) };
+        let rt = unsafe { create_slice(RUNTIME_ORG, manifest.runtime.size as usize) };
 
-            offset += manifest.as_bytes().len();
-            copy_bytes(fmc_org, mbox_ptr.add(offset), manifest.fmc.size as usize);
-            offset += manifest.fmc.size as usize;
-            copy_bytes(rt_org, mbox_ptr.add(offset), manifest.runtime.size as usize);
-        }
+        write_response(mbox, manifest.as_bytes())?;
+        write_response(mbox, fmc.as_bytes())?;
+        write_response(mbox, rt.as_bytes())?;
+
+        Ok(())
     }
 }

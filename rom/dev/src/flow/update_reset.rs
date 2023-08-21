@@ -66,6 +66,16 @@ impl UpdateResetFlow {
                 let manifest = Self::load_manifest(&mut recv_txn)?;
                 report_boot_status(UpdateResetLoadManifestComplete.into());
 
+                let manifest_mailbox_slice = unsafe {
+                    let ptr = caliptra_common::memory_layout::MBOX_ORG as *mut u32;
+                    core::slice::from_raw_parts_mut(ptr, core::mem::size_of::<ImageManifest>() / 4)
+                };
+
+                let manifest_mailbox = ImageManifest::read_from(manifest_mailbox_slice.as_bytes())
+                    .ok_or(0xdead)
+                    .unwrap();
+                assert!(manifest_mailbox.marker == MANIFEST_MARKER);
+
                 let info = Self::verify_image(&mut venv, &manifest, recv_txn.dlen());
                 let info = okref(&info)?;
                 report_boot_status(UpdateResetImageVerificationComplete.into());
@@ -110,12 +120,24 @@ impl UpdateResetFlow {
                     Err(CaliptraError::IMAGE_VERIFIER_ERR_MANIFEST_MARKER_MISMATCH)?;
                 }
 
-                let info = Self::verify_image(
+                //let manifest_mailbox_slice = unsafe {
+                //    let ptr = caliptra_common::memory_layout::MBOX_ORG as *mut u32;
+                //    core::slice::from_raw_parts_mut(ptr, core::mem::size_of::<ImageManifest>() / 4)
+                //};
+
+                // let manifest_mailbox = ImageManifest::read_from(manifest_mailbox_slice.as_bytes())
+                //    .ok_or(0xdead)
+                //    .unwrap();
+                //assert!(manifest_mailbox.marker == MANIFEST_MARKER);
+
+                cprintln!("Verify image");
+                Self::verify_image(
                     &mut venv,
                     &manifest,
                     caliptra_common::memory_layout::MBOX_SIZE,
-                );
-                let _info = okref(&info)?;
+                )?;
+
+                report_boot_status(FipsSelfTestComplete.into());
 
                 //Call the complete here to reset the execute bit
                 recv_txn.complete(true)?;
@@ -124,7 +146,6 @@ impl UpdateResetFlow {
                 // has been successfully verified in ICCM.
                 drop(recv_txn);
 
-                report_boot_status(FipsSelfTestComplete.into());
                 Ok(None)
             }
             _ => {

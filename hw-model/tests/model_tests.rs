@@ -3,7 +3,9 @@
 use caliptra_builder::FwId;
 use caliptra_hw_model::{BootParams, DefaultHwModel, HwModel, InitParams};
 use caliptra_hw_model_types::ErrorInjectionMode;
+use caliptra_image_types::MANIFEST_MARKER;
 use caliptra_test_harness_types as harness;
+use zerocopy::AsBytes;
 
 const BASE_FWID: FwId = FwId {
     crate_name: "caliptra-hw-model-test-fw",
@@ -192,4 +194,34 @@ fn test_pcr_extend() {
     let mut model = run_fw_elf(&elf);
 
     model.step_until_exit_success().unwrap();
+}
+
+#[test]
+fn test_mbox_sram_access() {
+    const MANIFEST_MARKER: u32 = 0x4E414D43;
+
+    let rom = caliptra_builder::build_firmware_rom(&FwId {
+        crate_name: "caliptra-hw-model-test-fw",
+        bin_name: "test_mbox_sram_access",
+        features: &["emu"],
+        ..Default::default()
+    })
+    .unwrap();
+
+    let mut model = caliptra_hw_model::new(BootParams {
+        init_params: InitParams {
+            rom: &rom,
+            ..Default::default()
+        },
+        ..Default::default()
+    })
+    .unwrap();
+
+    let mut manifest = caliptra_image_types::ImageManifest::default();
+    manifest.marker = MANIFEST_MARKER;
+
+    // Send command that returns success with no output
+    model
+        .mailbox_execute(0x2000_0000, manifest.as_bytes())
+        .unwrap();
 }
