@@ -412,4 +412,6 @@ fn test_fips_verify() {
 
     hw.tracing_hint(true);
     hw.mailbox_execute(0x4650_4C54, &[]).unwrap();
+
+    hw.step_until_boot_status(FipsSelfTestComplete.into(), true);
 }
