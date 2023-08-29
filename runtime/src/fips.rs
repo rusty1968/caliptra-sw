@@ -67,8 +67,15 @@ pub mod fips_self_test_cmd {
     use caliptra_image_verify::ImageVerifier;
     use zerocopy::AsBytes;
 
+    pub enum SelfTestStatus {
+        Idle,
+        InProgress(fn(&mut Drivers) -> CaliptraResult<()>),
+        Done,
+    }
+
     fn copy_and_verify_image(env: &mut Drivers) -> CaliptraResult<()> {
         cprintln!("set dlen");
+        env.mbox.write_cmd(0);
         env.mbox
             .set_dlen(env.manifest.size + env.manifest.fmc.size + env.manifest.runtime.size);
 
@@ -99,17 +106,16 @@ pub mod fips_self_test_cmd {
             env.manifest.size + env.manifest.fmc.size + env.manifest.runtime.size,
             ResetReason::UpdateReset,
         )?;
-        cprintln!("verify done");
+        env.mbox.unlock();
+        cprintln!("[rt] FIP SelfTest complete");
         Ok(())
     }
 
-    pub(crate) fn execute(env: &mut Drivers) -> CaliptraResult<MailboxResp> {
-        cprintln!("[rt] FIPS self test");
+    pub(crate) fn execute(env: &mut Drivers) -> CaliptraResult<()> {
         caliptra_common::wdt::stop_wdt(&mut env.soc_ifc);
+        cprintln!("[rt] FIPS self test");
         execute_kats(env)?;
-        copy_and_verify_image(env)?;
-
-        Ok(MailboxResp::default())
+        copy_and_verify_image(env)
     }
 
     /// Execute KAT for cryptographic algorithms implemented in H/W.
