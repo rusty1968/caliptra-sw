@@ -3,7 +3,7 @@
 # the caliptra-registers crate.
 [submodule "hw-latest/caliptra-rtl"]
 	path = hw-latest/caliptra-rtl
-	url = https://github.com/chipsalliance/caliptra-rtl
+	url = git@github.com:rusty1968/caliptra-rtl.git
 	branch = lsb-rtl
 [submodule "runtime/dpe"]
 	path = runtime/dpe
