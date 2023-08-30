@@ -4,7 +4,7 @@
 [submodule "hw-latest/caliptra-rtl"]
 	path = hw-latest/caliptra-rtl
 	url = https://github.com/chipsalliance/caliptra-rtl
-	branch = main
+	branch = lsb-rtl
 [submodule "runtime/dpe"]
 	path = runtime/dpe
 	url = https://github.com/chipsalliance/caliptra-dpe.git
