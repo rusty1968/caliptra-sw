@@ -18,7 +18,8 @@ use crate::lock::lock_registers;
 use core::hint::black_box;
 
 use caliptra_drivers::{
-    report_fw_error_non_fatal, CaliptraError, Ecc384, Hmac384, Mailbox, Sha256, Sha384, Sha384Acc,
+    report_fw_error_fatal, report_fw_error_non_fatal, CaliptraError, Ecc384, Hmac384, 
+    Mailbox, Sha256, Sha384, Sha384Acc,
 };
 use rom_env::RomEnv;
 
@@ -62,7 +63,12 @@ pub extern "C" fn rom_entry() -> ! {
         caliptra_drivers::Lifecycle::Reserved2 => "Unknown",
     };
     cprintln!("[state] LifecycleState = {}", _lifecyle);
-
+    if cfg!(feature = "val-rom")
+        && env.soc_ifc.lifecycle() == caliptra_drivers::Lifecycle::Production
+    {
+        cprintln!("Val ROM in Production lifecycle prohibited");
+        handle_fatal_error(CaliptraError::ROM_GLOBAL_VAL_ROM_IN_PRODUCTION.into());
+    }
     cprintln!(
         "[state] DebugLocked = {}",
         if env.soc_ifc.debug_locked() {
@@ -72,9 +78,11 @@ pub extern "C" fn rom_entry() -> ! {
         }
     );
 
-    let result = kat::execute_kat(&mut env);
-    if let Err(err) = result {
-        report_error(err.into());
+    if !cfg!(feature = "val-rom") {
+        let result = kat::execute_kat(&mut env);
+        if let Err(err) = result {
+            handle_fatal_error(err.into());
+        }
     }
 
     let result = flow::run(&mut env);
@@ -155,7 +163,7 @@ fn rom_panic(_: &core::panic::PanicInfo) -> ! {
 }
 
 #[allow(clippy::empty_loop)]
-fn report_error(code: u32) -> ! {
+pub fn report_error(code: u32) -> ! {
     cprintln!("ROM Error: 0x{:08X}", code);
     report_fw_error_non_fatal(code);
 
@@ -182,4 +190,26 @@ fn panic_is_possible() {
     black_box(());
     // The existence of this symbol is used to inform test_panic_missing
     // that panics are possible. Do not remove or rename this symbol.
+}
+
+#[allow(clippy::empty_loop)]
+fn handle_fatal_error(code: u32) -> ! {
+    cprintln!("ROM Fatal Error: 0x{:08X}", code);
+    report_fw_error_fatal(code);
+
+    unsafe {
+        // Zeroize the crypto blocks.
+        Ecc384::zeroize();
+        Hmac384::zeroize();
+        Sha256::zeroize();
+        Sha384::zeroize();
+        Sha384Acc::zeroize();
+    }
+
+    loop {
+        // SoC firmware might be stuck waiting for Caliptra to finish
+        // executing this pending mailbox transaction. Notify them that
+        // we've failed.
+        unsafe { Mailbox::abort_pending_soc_to_uc_transactions() };
+    }
 }

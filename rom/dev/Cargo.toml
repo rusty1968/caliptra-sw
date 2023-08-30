@@ -49,6 +49,7 @@ std = [
   "ufmt/std",
 ]
 no-fmc = []
+val-rom = []
 
 [[bin]]
 name = "asm_tests"

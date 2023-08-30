@@ -56,8 +56,10 @@ pub extern "C" fn fmc_entry() -> ! {
         core::slice::from_raw_parts_mut(ptr, core::mem::size_of::<FirmwareHandoffTable>())
     };
 
-    let fht = FirmwareHandoffTable::read_from(slice).unwrap();
-    assert!(fht.is_valid());
+    if cfg!(not(feature = "val-fmc")) {
+        let fht = FirmwareHandoffTable::read_from(slice).unwrap();
+        assert!(fht.is_valid());
+    }
 
     create_certs();
 
@@ -219,6 +221,9 @@ fn process_mailbox_commands() {
         0x1000_0003 => {
             read_fht(&mbox);
         }
+        0x1000_0004 => {
+            trigger_update_reset(&mbox);
+        }
         _ => {}
     }
 }
@@ -318,5 +323,13 @@ fn send_to_mailbox(
     if update_mb_state {
         mbox.dlen().write(|_| data_len as u32);
         mbox.status().write(|w| w.status(|w| w.data_ready()));
+    }
+}
+
+fn trigger_update_reset(mbox: &caliptra_registers::mbox::RegisterBlock<RealMmioMut>) {
+    mbox.status().write(|w| w.status(|w| w.cmd_complete()));
+    const STDOUT: *mut u32 = 0x3003_0624 as *mut u32;
+    unsafe {
+        core::ptr::write_volatile(STDOUT, 1_u32);
     }
 }
