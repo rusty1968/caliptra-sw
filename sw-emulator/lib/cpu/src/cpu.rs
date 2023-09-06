@@ -20,6 +20,21 @@ use caliptra_emu_types::{RvAddr, RvData, RvException, RvSize};
 
 pub type InstrTracer<'a> = dyn FnMut(u32, RvInstr) + 'a;
 
+pub struct CodeCoverage {
+    bit_vec: Vec<bool>,
+}
+impl CodeCoverage {
+    pub fn new(capacity_in_bits: usize) -> Self {
+        Self {
+            bit_vec: Vec::with_capacity(capacity_in_bits),
+        }
+    }
+    pub fn dump(&self) {}
+    pub fn log_execution(&mut self, pc: RvData) {
+        self.bit_vec.insert(pc as usize, true);
+    }
+}
+
 #[derive(PartialEq)]
 pub enum WatchPtrKind {
     Read,
@@ -307,7 +322,11 @@ impl<TBus: Bus> Cpu<TBus> {
     }
 
     /// Step a single instruction
-    pub fn step(&mut self, instr_tracer: Option<&mut InstrTracer>) -> StepAction {
+    pub fn step(
+        &mut self,
+        instr_tracer: Option<&mut InstrTracer>,
+        code_coverage: Option<&mut CodeCoverage>,
+    ) -> StepAction {
         let fired_action_types = self
             .clock
             .increment_and_process_timer_actions(1, &mut self.bus);
@@ -327,7 +346,7 @@ impl<TBus: Bus> Cpu<TBus> {
             }
         }
 
-        match self.exec_instr(instr_tracer) {
+        match self.exec_instr(instr_tracer, None) {
             Ok(result) => result,
             Err(exception) => self.handle_exception(exception),
         }
@@ -471,12 +490,12 @@ mod tests {
         let mut cpu = Cpu::new(bus, clock);
         for i in 0..30 {
             assert_eq!(cpu.clock.now(), i);
-            assert_eq!(cpu.step(None), StepAction::Continue);
+            assert_eq!(cpu.step(None, None), StepAction::Continue);
         }
         assert_eq!(fake_bus_log.take(), "");
         assert!(!timer.fired(&mut action0));
 
-        assert_eq!(cpu.step(None), StepAction::Continue);
+        assert_eq!(cpu.step(None, None), StepAction::Continue);
         assert_eq!(fake_bus_log.take(), "poll()\n");
         assert!(timer.fired(&mut action0));
 
