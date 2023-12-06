@@ -27,7 +27,8 @@ fn test_emu_coverage() {
         .unwrap();
         // Upload FW
         hw.step_until(|m| m.soc_ifc().cptra_flow_status().read().ready_for_fw());
-        calculator::coverage_from_bitmap(hw.code_coverage_bitmap(), &instr_pcs)
+        let (bitmap, _) = hw.code_coverage_bitmap();
+        calculator::coverage_from_bitmap(bitmap, &instr_pcs)
     };
 
     println!(

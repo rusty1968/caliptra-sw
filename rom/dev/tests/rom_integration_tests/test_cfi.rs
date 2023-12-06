@@ -30,8 +30,9 @@ fn find_symbol_containing<'a>(symbols: &'a [Symbol<'a>], search: &str) -> &'a Sy
 }
 
 fn assert_symbol_not_called(hw: &caliptra_hw_model::ModelEmulated, symbol: &Symbol) {
+    let (bitmap, _) = hw.code_coverage_bitmap();
     assert!(
-        !hw.code_coverage_bitmap()[symbol.value as usize],
+        !bitmap[symbol.value as usize],
         "{}() was called before the boot status changed to KatStarted. This is a CFI risk, as glitching a function like that could lead to an out-of-bounds write", symbol.name);
 }
 

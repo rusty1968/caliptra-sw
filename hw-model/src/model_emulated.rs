@@ -66,14 +66,14 @@ impl Drop for ModelEmulated {
             return;
         }
 
-        let bitmap = self.code_coverage_bitmap();
+        let (bitmap, _) = self.code_coverage_bitmap();
         let _ =
             caliptra_coverage::dump_emu_coverage_to_file(cov_path.as_str(), self.image_tag, bitmap);
     }
 }
 
 impl ModelEmulated {
-    pub fn code_coverage_bitmap(&self) -> &bit_vec::BitVec {
+    pub fn code_coverage_bitmap(&self) -> (&bit_vec::BitVec, &bit_vec::BitVec) {
         self.cpu.code_coverage.code_coverage_bitmap()
     }
 }
