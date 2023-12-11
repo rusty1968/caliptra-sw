@@ -77,7 +77,11 @@ pub fn dump_emu_coverage_to_file(
     writer.flush()?;
     Ok(())
 }
-pub fn uncovered_functions<'a>(elf_bytes: &'a [u8], bitmap: &'a BitVec) -> std::io::Result<()> {
+pub fn uncovered_functions<'a>(
+    base_addr: u64,
+    elf_bytes: &'a [u8],
+    bitmap: &'a BitVec,
+) -> std::io::Result<()> {
     let symbols = caliptra_builder::elf_symbols(elf_bytes)?;
 
     let filter = symbols
@@ -85,7 +89,7 @@ pub fn uncovered_functions<'a>(elf_bytes: &'a [u8], bitmap: &'a BitVec) -> std::
         .filter(|sym| sym.ty == SymbolType::Func)
         .filter(|function| {
             let mut pc_range = function.value..function.value + function.size;
-            !pc_range.any(|pc| bitmap.get(pc as usize).unwrap_or(false))
+            !pc_range.any(|pc| bitmap.get((pc - base_addr) as usize).unwrap_or(false))
         });
 
     for f in filter {
@@ -136,9 +140,11 @@ pub fn get_tag_from_image(image: &[u8]) -> u64 {
     hasher.finish()
 }
 
-pub fn get_tag_from_fw_id(id: &FwId<'static>) -> Option<u64> {
-    if let Ok(rom) = caliptra_builder::build_firmware_rom(id) {
-        return Some(get_tag_from_image(&rom));
+pub fn get_rom_tag_from_fw_id(id: &FwId<'static>) -> Option<u64> {
+    if id.bin_name == "caliptra-rom" {
+        if let Ok(rom) = caliptra_builder::build_firmware_rom(id) {
+            return Some(get_tag_from_image(&rom));
+        }
     }
     None
 }

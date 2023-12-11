@@ -16,6 +16,7 @@ use caliptra_emu_bus::Bus;
 use caliptra_hw_model_types::{
     ErrorInjectionMode, EtrngResponse, RandomEtrngResponses, RandomNibbles, DEFAULT_CPTRA_OBF_KEY,
 };
+use caliptra_image_types::ImageManifest;
 use zerocopy::{AsBytes, FromBytes, LayoutVerified, Unalign};
 
 use caliptra_registers::mbox;
@@ -204,6 +205,7 @@ fn trace_path_or_env(trace_path: Option<PathBuf>) -> Option<PathBuf> {
 pub struct BootParams<'a> {
     pub init_params: InitParams<'a>,
     pub fuses: Fuses,
+    pub manifest: Option<&'a ImageManifest>,
     pub fw_image: Option<&'a [u8]>,
     pub initial_dbg_manuf_service_reg: u32,
     pub initial_repcnt_thresh_reg: Option<CptraItrngEntropyConfig1WriteVal>,
@@ -216,6 +218,7 @@ impl<'a> Default for BootParams<'a> {
         Self {
             init_params: Default::default(),
             fuses: Default::default(),
+            manifest: None,
             fw_image: Default::default(),
             initial_dbg_manuf_service_reg: Default::default(),
             initial_repcnt_thresh_reg: Default::default(),
@@ -493,6 +496,7 @@ pub trait HwModel {
             }
             writeln!(hw.output().logger(), "ready_for_fw is high")?;
             hw.upload_firmware(fw_image)?;
+            hw.cover_fw_mage(fw_image);
         }
 
         Ok(hw)
@@ -779,6 +783,8 @@ pub trait HwModel {
     }
 
     fn tracing_hint(&mut self, enable: bool);
+
+    fn cover_fw_mage(&mut self, _image: &[u8]) {}
 
     fn ecc_error_injection(&mut self, _mode: ErrorInjectionMode) {}
 

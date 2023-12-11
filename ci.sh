@@ -100,7 +100,7 @@ fi
 if task_enabled "test"; then
   echo Run tests
   if cargo nextest help > /dev/null 2>/dev/null; then
-    CPTRA_COVERAGE_PATH="${cov_dir}" CALIPTRA_PREBUILT_FW_DIR="${fw_dir}" cargo nextest run --config "${EXTRA_CARGO_CONFIG}" --locked
+    CPTRA_COVERAGE_PATH="${cov_dir}" CALIPTRA_PREBUILT_FW_DIR="${fw_dir}" cargo nextest run --no-capture --config "${EXTRA_CARGO_CONFIG}" --locked
   else
     CPTRA_COVERAGE_PATH="${cov_dir}" CALIPTRA_PREBUILT_FW_DIR="${fw_dir}" cargo --config "${EXTRA_CARGO_CONFIG}" test --locked
   fi

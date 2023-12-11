@@ -1,5 +1,8 @@
 // Licensed under the Apache-2.0 license
 
+use std::collections::hash_map::DefaultHasher;
+use std::hash::Hasher;
+
 use std::cell::Cell;
 use std::error::Error;
 use std::io::Write;
@@ -14,6 +17,7 @@ use caliptra_emu_periph::ReadyForFwCb;
 use caliptra_emu_periph::{CaliptraRootBus, CaliptraRootBusArgs, SocToCaliptraBus, TbServicesCb};
 use caliptra_emu_types::{RvAddr, RvData, RvSize};
 use caliptra_hw_model_types::ErrorInjectionMode;
+use caliptra_image_types::IMAGE_MANIFEST_BYTE_SIZE;
 
 use crate::bus_logger::BusLogger;
 use crate::bus_logger::LogFile;
@@ -56,7 +60,8 @@ pub struct ModelEmulated {
     cpu_enabled: Rc<Cell<bool>>,
     trace_path: Option<PathBuf>,
 
-    image_tag: u64,
+    rom_image_tag: u64,
+    iccm_image_tag: Option<u64>,
 }
 impl Drop for ModelEmulated {
     fn drop(&mut self) {
@@ -66,9 +71,20 @@ impl Drop for ModelEmulated {
             return;
         }
 
-        let (bitmap, _) = self.code_coverage_bitmap();
-        let _ =
-            caliptra_coverage::dump_emu_coverage_to_file(cov_path.as_str(), self.image_tag, bitmap);
+        let (rom_bitmap, iccm_bitmap) = self.code_coverage_bitmap();
+
+        let _ = caliptra_coverage::dump_emu_coverage_to_file(
+            cov_path.as_str(),
+            self.rom_image_tag,
+            rom_bitmap,
+        );
+        if let Some(iccm_image_tag) = self.iccm_image_tag {
+            let _ = caliptra_coverage::dump_emu_coverage_to_file(
+                cov_path.as_str(),
+                iccm_image_tag,
+                iccm_bitmap,
+            );
+        }
     }
 }
 
@@ -78,6 +94,12 @@ impl ModelEmulated {
     }
 }
 
+fn hash_slice(slice: &[u8]) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    std::hash::Hash::hash_slice(slice, &mut hasher);
+    hasher.finish()
+}
+
 impl crate::HwModel for ModelEmulated {
     type TBus<'a> = EmulatedApbBus<'a>;
 
@@ -85,9 +107,6 @@ impl crate::HwModel for ModelEmulated {
     where
         Self: Sized,
     {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::Hasher;
-
         let clock = Clock::new();
         let timer = clock.timer();
 
@@ -143,9 +162,7 @@ impl crate::HwModel for ModelEmulated {
         let soc_to_caliptra_bus = root_bus.soc_to_caliptra_bus();
         let cpu = Cpu::new(BusLogger::new(root_bus), clock);
 
-        let mut hasher = DefaultHasher::new();
-        std::hash::Hash::hash_slice(params.rom, &mut hasher);
-        let image_tag = hasher.finish();
+        let rom_image_tag = hash_slice(params.rom);
 
         let mut m = ModelEmulated {
             output,
@@ -155,12 +172,18 @@ impl crate::HwModel for ModelEmulated {
             ready_for_fw,
             cpu_enabled,
             trace_path: trace_path_or_env(params.trace_path),
-            image_tag,
+            rom_image_tag,
+            iccm_image_tag: None,
         };
         // Turn tracing on if the trace path was set
         m.tracing_hint(true);
 
         Ok(m)
+    }
+
+    fn cover_fw_mage(&mut self, fw_image: &[u8]) {
+        let iccm_image = &fw_image[IMAGE_MANIFEST_BYTE_SIZE..];
+        self.iccm_image_tag = Some(hash_slice(iccm_image));
     }
 
     fn ready_for_fw(&self) -> bool {
