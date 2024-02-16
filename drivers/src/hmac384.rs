@@ -213,7 +213,7 @@ impl Hmac384 {
 
         // Generate an LFSR seed.
         let rand_data = trng.generate()?;
-        let iv: [u32; 12] = rand_data.0[..5].try_into().unwrap();
+        let iv: [u32; 12] = rand_data.0[..12].try_into().unwrap();
         KvAccess::copy_from_arr(&Array4x12::from(iv), hmac.lfsr_seed())?;
 
         // Calculate the hmac
