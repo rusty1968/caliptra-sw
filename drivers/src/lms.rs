@@ -325,6 +325,23 @@ impl Lms {
         }
         let mut z = [HashValue::<N>::default(); P];
 
+        //  Q = message_digest (argument to this function, pre-calculated using hash_message).
+        //  I = lms_identifier
+        //  s = signature. 
+        //  The acceleration engine will iterate range(j,a) 
+        //  if a is placed at offset 22 of the hash block. 
+        //  Q = H(I || u32str(q) || u16str(D_MESG) || C || message)
+        //  for ( i = 0; i < p; i = i + 1 ) {
+        //      a = coef(Q || Cksm(Q), i, w)
+        //      tmp = s[i]
+        //      for ( j = 0; j < a; j = j + 1 ) {
+        //          tmp = H(I || u32str(q) || u16str(i) || u8str(j) || tmp)
+        //      }
+        //      z[i] = tmp
+        //  }
+        // 
+        // 
+
         let mut message_hash_with_checksum = [0u8; 34]; // 2 extra bytes for the checksum. needs to be N+2
 
         let mut i = 0;
