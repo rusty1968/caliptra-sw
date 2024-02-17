@@ -22,6 +22,8 @@ use caliptra_emu_types::{RvData, RvSize};
 use tock_registers::interfaces::{ReadWriteable, Readable, Writeable};
 use tock_registers::register_bitfields;
 
+use smlang::statemachine;
+
 register_bitfields! [
     u32,
 
@@ -34,15 +36,20 @@ register_bitfields! [
             SHA256 = 0b01,
         ],
         ZEROIZE OFFSET(3) NUMBITS(1) [],
-        RSVD OFFSET(4) NUMBITS(28) [],
+        WNTZ_MODE OFFSET(4) NUMBITS(1) [],
+        WNTZ_W OFFSET(5)NUMBITS(4) [],
+        WNTZ_N_MODE OFFSET(6) NUMBITS(1) [],
+        RSVD OFFSET(7) NUMBITS(22) [],
     ],
 
     /// Status Register Fields
     Status[
         READY OFFSET(0) NUMBITS(1) [],
         VALID OFFSET(1) NUMBITS(1) [],
+        WNTZ_BUSY OFFSET(2) NUMBITS(1) [],
     ],
 ];
+
 
 const SHA256_BLOCK_SIZE: usize = 64;
 
@@ -225,6 +232,19 @@ impl HashSha256 {
         self.hash.data_mut().fill(0);
     }
 }
+
+statemachine! {
+    transitions: {
+        *Idle + WriteCtl = First,
+        First + WriteCtl = Others,
+        Others +Event3 = Idle
+
+    }
+}
+
+struct WntnzContext;
+impl StateMachineContext for WntnzContext { }
+
 
 #[cfg(test)]
 mod tests {
