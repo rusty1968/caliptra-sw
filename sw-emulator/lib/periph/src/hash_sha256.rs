@@ -19,9 +19,13 @@ use caliptra_emu_bus::{
 use caliptra_emu_crypto::{Sha256, Sha256Mode};
 use caliptra_emu_derive::Bus;
 use caliptra_emu_types::{RvData, RvSize};
+use tock_registers::fields::FieldValue;
 use tock_registers::interfaces::{ReadWriteable, Readable, Writeable};
 use tock_registers::register_bitfields;
 
+use smlang::statemachine;
+
+/// Register bitfields for the SHA256 peripheral
 register_bitfields! [
     u32,
 
@@ -34,13 +38,17 @@ register_bitfields! [
             SHA256 = 0b01,
         ],
         ZEROIZE OFFSET(3) NUMBITS(1) [],
-        RSVD OFFSET(4) NUMBITS(28) [],
+        WNTZ_MODE OFFSET(4) NUMBITS(1) [],
+        WNTZ_W OFFSET(5)NUMBITS(4) [],
+        WNTZ_N_MODE OFFSET(6) NUMBITS(1) [],
+        RSVD OFFSET(7) NUMBITS(22) [],
     ],
 
     /// Status Register Fields
     Status[
         READY OFFSET(0) NUMBITS(1) [],
         VALID OFFSET(1) NUMBITS(1) [],
+        WNTZ_BUSY OFFSET(2) NUMBITS(1) [],
     ],
 ];
 
@@ -98,6 +106,9 @@ pub struct HashSha256 {
     timer: Timer,
 
     op_complete_action: Option<ActionHandle>,
+
+    /// Winternitz state machine
+    state_machine: StateMachine<WntnzContext>,
 }
 
 impl HashSha256 {
@@ -127,20 +138,11 @@ impl HashSha256 {
             hash: ReadOnlyMemory::new(),
             timer: Timer::new(clock),
             op_complete_action: None,
+            state_machine: StateMachine::new(WntnzContext::default()),
         }
     }
 
-    /// On Write callback for `control` register
-    ///
-    /// # Arguments
-    ///
-    /// * `size` - Size of the write
-    /// * `val` - Data to write
-    ///
-    /// # Error
-    ///
-    /// * `BusError` - Exception with cause `BusError::StoreAccessFault` or `BusError::StoreAddrMisaligned`
-    pub fn on_write_control(&mut self, size: RvSize, val: RvData) -> Result<(), BusError> {
+    pub fn hash_non_wntntz(&mut self, size: RvSize, val: RvData) -> Result<(), BusError> {
         // Writes have to be Word aligned
         if size != RvSize::Word {
             Err(BusError::StoreAccessFault)?
@@ -193,6 +195,53 @@ impl HashSha256 {
         Ok(())
     }
 
+    /// On Write callback for `control` register
+    ///
+    /// # Arguments
+    ///
+    /// * `size` - Size of the write
+    /// * `val` - Data to write
+    ///
+    /// # Error
+    ///
+    /// * `BusError` - Exception with cause `BusError::StoreAccessFault` or `BusError::StoreAddrMisaligned`
+    pub fn on_write_control(&mut self, size: RvSize, val: RvData) -> Result<(), BusError> {
+        // Writes have to be Word aligned
+        if size != RvSize::Word {
+            Err(BusError::StoreAccessFault)?
+        }
+
+        // Set the control register
+        self.control.reg.set(val);
+
+        let params = WntzParams {
+            wntz_mode: self.control.reg.is_set(Control::WNTZ_MODE),
+            wntz_w: self.control.reg.read(Control::WNTZ_W),
+            wntz_n_mode: self.control.reg.is_set(Control::WNTZ_N_MODE),
+            init: self.control.reg.is_set(Control::INIT),
+        };
+
+        match self
+            .state_machine
+            .process_event(Events::WriteCtl(WntntzParamValue(params)))
+        {
+            Ok(_) => {
+                // for ( j = a; j < 2^w - 1; j = j + 1 ) {
+                //        tmp = H(I || u32str(q) || u16str(i) || u8str(j) || tmp)
+                //}
+                let mut wnt_prefix = [0u8; 22];
+                // Copy first 22 bytes from block to wnt_prefix
+                wnt_prefix.copy_from_slice(&self.block.data()[..22]);
+                let _ = self
+                    .state_machine
+                    .process_event(Events::WritePrefix(PrefixValue(wnt_prefix)));
+                // Hash the first block
+                self.hash_non_wntntz(size, val)
+            }
+            Err(_) => self.hash_non_wntntz(size, val),
+        }
+    }
+
     /// Called by Bus::poll() to indicate that time has passed
     fn poll(&mut self) {
         if self.timer.fired(&mut self.op_complete_action) {
@@ -226,6 +275,90 @@ impl HashSha256 {
     }
 }
 
+pub struct WntzParams {
+    wntz_mode: bool,
+    wntz_w: u32,
+    wntz_n_mode: bool,
+    init: bool,
+}
+pub struct WntntzParamValue(pub WntzParams);
+pub struct PrefixValue(pub [u8; 22]);
+pub struct StatusRegisterValue(pub u32);
+
+statemachine! {
+    transitions: {
+        *WntntzDisabled + WriteCtl(WntntzParamValue) [wntnz_is_enabled] = WntntzIdle,
+        // If this is the first block after winterntiz enablement, then transition to WntnzFirst
+        WntntzIdle + WritePrefix(PrefixValue) [wntnz_can_start] = WntnzFirst,
+//        First + WriteBlock = Others,
+//        First + WriteStatus = Others,
+//        Others + WriteBlock = Others,
+//        Others + WriteStatus = Idle
+
+    }
+}
+struct WntnzContext {
+    /// Winternitz prefix. { I, q, i } // 16B + 4B + 2B  = 22B
+    wntz_prefix: [u8; 22],
+    /// Winternitz parameter.
+    wntz_iter: u16,
+    /// Winternitz n-mode.
+    wntz_n_mode: bool,
+    /// Winternitz iteration count (initialized by the first block after winterntiz enablement).
+    wntz_j_reg: u8,
+}
+impl Default for WntnzContext {
+    fn default() -> Self {
+        WntnzContext {
+            wntz_prefix: [0; 22],
+            wntz_iter: 0,
+            wntz_n_mode: false,
+            wntz_j_reg: 0,
+        }
+    }
+}
+
+impl StateMachineContext for WntnzContext {
+    fn wntnz_is_enabled(&mut self, params: &WntntzParamValue) -> Result<(), ()> {
+        // If WNTZ_MODE is set and first is set, then enable winternitz
+        if params.0.wntz_mode && params.0.init {
+            // Extract W value
+            let w_value = params.0.wntz_w;
+            // Exract N mode
+            self.wntz_n_mode = params.0.wntz_n_mode;
+            // Initialize winternitz iteration count
+            let result = match w_value {
+                1 | 2 | 4 | 8 => {
+                    self.wntz_iter = (1 << w_value) - 1;
+                    Ok(())
+                }
+                _ => Err(()),
+            };
+            return result;
+        }
+        Err(())
+    }
+    fn wntnz_can_start(&mut self, first_block: &PrefixValue) -> Result<(), ()> {
+        self.wntz_j_reg = first_block.0[22];
+        self.wntz_prefix = first_block.0;
+
+        if self.wntz_j_reg < self.wntz_iter as u8 {
+            return Ok(());
+        }
+        Err(())
+    }
+}
+
+// Construct WntzParams from the control register
+pub fn new_wntz_params(control: ReadWriteRegister<u32, Control::Register>) -> WntzParams {
+    WntzParams {
+        wntz_mode: control.reg.is_set(Control::WNTZ_MODE),
+        wntz_w: control.reg.read(Control::WNTZ_W),
+        wntz_n_mode: control.reg.is_set(Control::WNTZ_N_MODE),
+        init: control.reg.is_set(Control::INIT),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -243,6 +376,73 @@ mod tests {
     const OFFSET_BLOCK: RvAddr = 0x80;
     const OFFSET_HASH: RvAddr = 0x100;
 
+    #[test]
+    fn test_new_wntz_params() {
+        // Build register with wntz enabled from field values
+        let control = ReadWriteRegister::new(0);
+        control.reg.modify(Control::INIT::SET);
+        control.reg.modify(Control::WNTZ_MODE::SET);
+        control.reg.modify(Control::WNTZ_W.val(4));
+        let params = new_wntz_params(control);
+        assert_eq!(params.wntz_mode, true);
+        assert_eq!(params.wntz_w, 4);
+        assert_eq!(params.wntz_n_mode, false);
+        assert_eq!(params.init, true);
+    }
+    #[test]
+    fn test_wntz_enabled_failure() {
+        let wntz_ctx = WntnzContext::default();
+        // Create state machine
+        let mut sm = StateMachine::new(wntz_ctx);
+
+        // Write control register to enable winternitz
+        let params = WntzParams {
+            wntz_mode: true,
+            wntz_w: 6,
+            wntz_n_mode: true,
+            init: true,
+        };
+        let res = sm.process_event(Events::WriteCtl(WntntzParamValue(params)));
+        assert!(res.is_err());
+
+        // Write control register to enable winternitz
+        let params = WntzParams {
+            wntz_mode: true,
+            wntz_w: 4,
+            wntz_n_mode: true,
+            init: false,
+        };
+        let res = sm.process_event(Events::WriteCtl(WntntzParamValue(params)));
+        assert!(res.is_err());
+
+        // Write control register to enable winternitz
+        let params = WntzParams {
+            wntz_mode: true,
+            wntz_w: 6,
+            wntz_n_mode: true,
+            init: true,
+        };
+        let res = sm.process_event(Events::WriteCtl(WntntzParamValue(params)));
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_wntz_enabled_success() {
+        let wntz_ctx = WntnzContext::default();
+        // Create state machine
+        let mut sm = StateMachine::new(wntz_ctx);
+        // Write control register to enable winternitz
+        let params = WntzParams {
+            wntz_mode: true,
+            wntz_w: 8,
+            wntz_n_mode: true,
+            init: true,
+        };
+        let res = sm.process_event(Events::WriteCtl(WntntzParamValue(params)));
+        assert!(res.is_ok());
+
+        assert_eq!(255, sm.context.wntz_iter);
+    }
     #[test]
     fn test_name_read() {
         let mut sha256 = HashSha256::new(&Clock::new());
