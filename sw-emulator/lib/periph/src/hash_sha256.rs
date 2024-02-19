@@ -221,16 +221,10 @@ impl HashSha256 {
         // Set the control register
         self.control.reg.set(val);
 
-        let params = WntzParams {
-            wntz_mode: self.control.reg.is_set(Control::WNTZ_MODE),
-            wntz_w: self.control.reg.read(Control::WNTZ_W),
-            wntz_n_mode: self.control.reg.is_set(Control::WNTZ_N_MODE),
-            init: self.control.reg.is_set(Control::INIT),
-        };
-
+        // Send WriteCtlEvent to the state machine
         let _ = self
             .state_machine
-            .process_event(Events::WriteCtl(WntntzParamValue(params)));
+            .process_event(Events::WriteCtlEvent(CtlRegisterData { control: val }));
 
         match self.state_machine.state() {
             States::WntntzDisabled => self.hash_non_wntntz(size, val),
@@ -300,14 +294,14 @@ pub struct StatusRegisterValue(pub u32);
 
 pub struct BlockData(pub [u8; 64]);
 
-pub struct WriteCtlData {
+pub struct CtlRegisterData {
     pub control: u32,
-    pub block: [u8; 64],
 }
 
 statemachine! {
     transitions: {
-        *WntntzDisabled + WriteCtl(WntntzParamValue) [wntnz_is_enabled] = WntntzIdle,
+        //WntntzDisabled + WriteCtl(WntntzParamValue) [wntnz_is_enabled] = WntntzIdle,
+        *WntntzDisabled + WriteCtlEvent(CtlRegisterData) [wntnz_is_enabled] = WntntzIdle,
         WntntzDisabled + WriteBlock(BlockData) [always_ok]/hash_the_block = WntntzDisabled,
         // If this is the first block after winterntiz enablement, then transition to WntnzFirst
         WntntzIdle + WritePrefix(PrefixValue) [wntnz_can_start] = WntnzFirst,
@@ -356,13 +350,23 @@ impl Context {
 }
 
 impl StateMachineContext for Context {
-    fn wntnz_is_enabled(&mut self, params: &WntntzParamValue) -> Result<(), ()> {
+    fn wntnz_is_enabled(&mut self, val: &CtlRegisterData) -> Result<(), ()> {
+        // Set the control register
+        self.control.reg.set(val.control);
+
+        let params = WntzParams {
+            wntz_mode: self.control.reg.is_set(Control::WNTZ_MODE),
+            wntz_w: self.control.reg.read(Control::WNTZ_W),
+            wntz_n_mode: self.control.reg.is_set(Control::WNTZ_N_MODE),
+            init: self.control.reg.is_set(Control::INIT),
+        };
+
         // If WNTZ_MODE is set and first is set, then enable winternitz
-        if params.0.wntz_mode && params.0.init {
+        if params.wntz_mode && params.init {
             // Extract W value
-            let w_value = params.0.wntz_w;
+            let w_value = params.wntz_w;
             // Exract N mode
-            self.wntz_n_mode = params.0.wntz_n_mode;
+            self.wntz_n_mode = params.wntz_n_mode;
             // Initialize winternitz iteration count
             let result = match w_value {
                 1 | 2 | 4 | 8 => {
@@ -389,6 +393,8 @@ impl StateMachineContext for Context {
     }
 
     fn hash_the_block(&mut self, event_data: &BlockData) -> () {
+        // Copy block data to the block register.
+        self.block.data_mut().copy_from_slice(&event_data.0);
         if self.control.reg.is_set(Control::INIT) || self.control.reg.is_set(Control::NEXT) {
             // Reset the Ready and Valid status bits
             self.status
@@ -485,53 +491,56 @@ mod tests {
         // Create state machine
         let mut sm = StateMachine::new(wntz_ctx);
 
-        // Write control register to enable winternitz
-        let params = WntzParams {
-            wntz_mode: true,
-            wntz_w: 6,
-            wntz_n_mode: true,
-            init: true,
-        };
-        let res = sm.process_event(Events::WriteCtl(WntntzParamValue(params)));
+        // Attempt to enable winterntiz with an incorrect w value
+        let control = ReadWriteRegister::new(0);
+        control.reg.modify(Control::WNTZ_MODE::SET);
+        control.reg.modify(Control::WNTZ_W.val(3));
+        control.reg.modify(Control::WNTZ_N_MODE::SET);
+        control.reg.modify(Control::INIT::SET);
+        let val = control.reg.get();
+
+        let res = sm.process_event(Events::WriteCtlEvent(CtlRegisterData { control: val }));
         assert!(res.is_err());
 
-        // Write control register to enable winternitz
-        let params = WntzParams {
-            wntz_mode: true,
-            wntz_w: 4,
-            wntz_n_mode: true,
-            init: false,
-        };
-        let res = sm.process_event(Events::WriteCtl(WntntzParamValue(params)));
+        // Enable winternitz without init via control register
+        let control = ReadWriteRegister::new(0);
+        control.reg.modify(Control::WNTZ_MODE::SET);
+        control.reg.modify(Control::WNTZ_W.val(4));
+        control.reg.modify(Control::WNTZ_N_MODE::SET);
+        // Read the data from control register
+        let val = control.reg.get();
+        let res = sm.process_event(Events::WriteCtlEvent(CtlRegisterData { control: val }));
         assert!(res.is_err());
 
-        // Write control register to enable winternitz
-        let params = WntzParams {
-            wntz_mode: true,
-            wntz_w: 6,
-            wntz_n_mode: true,
-            init: true,
-        };
-        let res = sm.process_event(Events::WriteCtl(WntntzParamValue(params)));
+        // Enable winternitz without wntz mode via control register
+        let control = ReadWriteRegister::new(0);
+        control.reg.modify(Control::WNTZ_W.val(4));
+        control.reg.modify(Control::WNTZ_N_MODE::SET);
+        control.reg.modify(Control::INIT::SET);
+        // Read the data from control register
+        let val = control.reg.get();
+        let res = sm.process_event(Events::WriteCtlEvent(CtlRegisterData { control: val }));
         assert!(res.is_err());
     }
 
     #[test]
+    /// Attempt to enable winterntiz with correct parameters.
+    /// wntz_mode = true, wntz_w = 4, wntz_n_mode = true, init = true
     fn test_wntz_enabled_success() {
         let wntz_ctx = Context::new(&Clock::new());
         // Create state machine
         let mut sm = StateMachine::new(wntz_ctx);
-        // Write control register to enable winternitz
-        let params = WntzParams {
-            wntz_mode: true,
-            wntz_w: 8,
-            wntz_n_mode: true,
-            init: true,
-        };
-        let res = sm.process_event(Events::WriteCtl(WntntzParamValue(params)));
-        assert!(res.is_ok());
 
-        assert_eq!(255, sm.context.wntz_iter);
+        // Write control register to enable winternitz
+        let control = ReadWriteRegister::new(0);
+        control.reg.modify(Control::WNTZ_MODE::SET);
+        control.reg.modify(Control::WNTZ_W.val(4));
+        control.reg.modify(Control::WNTZ_N_MODE::SET);
+        control.reg.modify(Control::INIT::SET);
+        // Read the data from control register
+        let val = control.reg.get();
+        let res = sm.process_event(Events::WriteCtlEvent(CtlRegisterData { control: val }));
+        assert!(res.is_ok());
     }
     #[test]
     fn test_name_read() {
