@@ -19,13 +19,12 @@ use caliptra_emu_bus::{
 use caliptra_emu_crypto::{Sha256, Sha256Mode};
 use caliptra_emu_derive::Bus;
 use caliptra_emu_types::{RvData, RvSize};
-use tock_registers::fields::FieldValue;
 use tock_registers::interfaces::{ReadWriteable, Readable, Writeable};
 use tock_registers::register_bitfields;
 
 use smlang::statemachine;
 
-/// Register bitfields for the SHA256 peripheral
+// Register bitfields for the SHA256 peripheral
 register_bitfields! [
     u32,
 
@@ -40,9 +39,8 @@ register_bitfields! [
         ZEROIZE OFFSET(3) NUMBITS(1) [],
         WNTZ_MODE OFFSET(4) NUMBITS(1) [],
         WNTZ_W OFFSET(5)NUMBITS(4) [],
-        WNTZ_N_MODE OFFSET(6) NUMBITS(1) [],
-        RSVD OFFSET(7) NUMBITS(22) [],
-    ],
+        WNTZ_N_MODE OFFSET(9) NUMBITS(1) [],
+            ],
 
     /// Status Register Fields
     Status[
