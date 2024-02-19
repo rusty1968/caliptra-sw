@@ -89,8 +89,8 @@ pub struct HashSha256 {
     control: ReadWriteRegister<u32, Control::Register>,
 
     /// Status register
-    #[register(offset = 0x0000_0018)]
-    status: ReadOnlyRegister<u32, Status::Register>,
+    #[register(offset = 0x0000_0018, read_fn = read_status)]
+    _status: ReadOnlyRegister<u32, Status::Register>,
 
     /// SHA256 Block Memory
     #[peripheral(offset = 0x0000_0080, mask = 0x0000_007f)]
@@ -99,12 +99,6 @@ pub struct HashSha256 {
     /// SHA256 Hash Memory
     #[peripheral(offset = 0x0000_0100, mask = 0x0000_00ff)]
     hash: ReadOnlyMemory<SHA256_HASH_SIZE>,
-
-    /// SHA256 engine
-    sha256: Sha256,
-
-    //timer: Timer,
-    op_complete_action: Option<ActionHandle>,
 
     /// Winternitz state machine
     state_machine: StateMachine<Context>,
@@ -126,82 +120,20 @@ impl HashSha256 {
     /// Create a new instance of SHA-512 Engine
     pub fn new(clock: &Clock) -> Self {
         Self {
-            sha256: Sha256::new(Sha256Mode::Sha256), // Default SHA256 mode
             name0: ReadOnlyRegister::new(Self::NAME0_VAL),
             name1: ReadOnlyRegister::new(Self::NAME1_VAL),
             version0: ReadOnlyRegister::new(Self::VERSION0_VAL),
             version1: ReadOnlyRegister::new(Self::VERSION1_VAL),
             control: ReadWriteRegister::new(0),
-            status: ReadOnlyRegister::new(Status::READY::SET.value),
+            _status: ReadOnlyRegister::new(Status::READY::SET.value),
             block: ReadWriteMemory::new(),
             hash: ReadOnlyMemory::new(),
-            op_complete_action: None,
             state_machine: StateMachine::new(Context::new(clock)),
         }
     }
-
-    pub fn hash_non_wntntz(&mut self, size: RvSize, val: RvData) -> Result<(), BusError> {
-        // Writes have to be Word aligned
-        if size != RvSize::Word {
-            Err(BusError::StoreAccessFault)?
-        }
-
-        // Set the control register
-        self.control.reg.set(val);
-
-        if self.control.reg.is_set(Control::INIT) || self.control.reg.is_set(Control::NEXT) {
-            // Reset the Ready and Valid status bits
-            self.status
-                .reg
-                .modify(Status::READY::CLEAR + Status::VALID::CLEAR);
-
-            if self.control.reg.is_set(Control::INIT) {
-                // Initialize the SHA512 engine with the mode.
-                let mut mode = Sha256Mode::Sha256;
-                let modebits = self.control.reg.read(Control::MODE);
-
-                match modebits {
-                    0 => {
-                        mode = Sha256Mode::Sha224;
-                    }
-                    1 => {
-                        mode = Sha256Mode::Sha256;
-                    }
-                    _ => Err(BusError::StoreAccessFault)?,
-                }
-
-                self.sha256.reset(mode);
-
-                // Update the SHA256 engine with a new block
-                self.sha256.update(self.block.data());
-
-                // Schedule a future call to poll() complete the operation.
-                self.op_complete_action = Some(
-                    self.state_machine
-                        .context
-                        .timer
-                        .schedule_poll_in(INIT_TICKS),
-                );
-            } else if self.control.reg.is_set(Control::NEXT) {
-                // Update the SHA512 engine with a new block
-                self.sha256.update(self.block.data());
-                // Schedule a future call to poll() complete the operation.
-                self.op_complete_action = Some(
-                    self.state_machine
-                        .context
-                        .timer
-                        .schedule_poll_in(UPDATE_TICKS),
-                );
-            }
-        }
-
-        if self.control.reg.is_set(Control::ZEROIZE) {
-            self.zeroize();
-        }
-
-        Ok(())
+    pub fn read_status(&self, _size: RvSize) -> Result<u32, BusError> {
+        Ok(self.state_machine.context.status.reg.get())
     }
-
     /// On Write callback for `control` register
     ///
     /// # Arguments
@@ -226,22 +158,13 @@ impl HashSha256 {
             .state_machine
             .process_event(Events::WriteCtlEvent(CtlRegisterData { control: val }));
 
-        match self.state_machine.state() {
-            States::WntntzDisabled => self.hash_non_wntntz(size, val),
-            _ => {
-                // for ( j = a; j < 2^w - 1; j = j + 1 ) {
-                //        tmp = H(I || u32str(q) || u16str(i) || u8str(j) || tmp)
-                //}
-                let mut wnt_prefix = [0u8; 22];
-                // Copy first 22 bytes from block to wnt_prefix
-                wnt_prefix.copy_from_slice(&self.block.data()[..22]);
-                let _ = self
-                    .state_machine
-                    .process_event(Events::WritePrefix(PrefixValue(wnt_prefix)));
-                // Hash the first block
-                self.hash_non_wntntz(size, val)
-            }
-        }
+        let block = self.block.data();
+        // Send block to the state machine
+        let _ = self
+            .state_machine
+            .process_event(Events::WriteBlock(BlockData(*block)));
+
+        Ok(())
     }
 
     /// Called by Bus::poll() to indicate that time has passed
@@ -250,13 +173,15 @@ impl HashSha256 {
             .state_machine
             .context
             .timer
-            .fired(&mut self.op_complete_action)
+            .fired(&mut self.state_machine.context.op_complete_action)
         {
             // Retrieve the hash
-            self.sha256.hash(self.hash.data_mut());
+            self.state_machine.context.sha256.hash(self.hash.data_mut());
 
             // Update Ready and Valid status bits
-            self.status
+            self.state_machine
+                .context
+                .status
                 .reg
                 .modify(Status::READY::SET + Status::VALID::SET);
         }
@@ -273,7 +198,7 @@ impl HashSha256 {
     }
 
     pub fn hash(&self) -> &[u8] {
-        &self.hash.data()[..self.sha256.hash_len()]
+        &self.hash.data()[..self.state_machine.context.sha256.hash_len()]
     }
 
     fn zeroize(&mut self) {
@@ -323,6 +248,9 @@ struct Context {
     /// Timer
     timer: Timer,
 
+    /// Action handle for the operation completion
+    op_complete_action: Option<ActionHandle>,
+
     /// Winternitz prefix. { I, q, i } // 16B + 4B + 2B  = 22B
     wntz_prefix: [u8; 22],
     /// Winternitz parameter.
@@ -345,6 +273,7 @@ impl Context {
             sha256: Sha256::new(Sha256Mode::Sha256),
             hash: ReadOnlyMemory::new(),
             timer: Timer::new(clock),
+            op_complete_action: None,
         }
     }
 }
@@ -422,13 +351,13 @@ impl StateMachineContext for Context {
                 self.sha256.update(self.block.data());
 
                 // Schedule a future call to poll() complete the operation.
-                //self.op_complete_action = Some(self.timer.schedule_poll_in(INIT_TICKS));
+                self.op_complete_action = Some(self.timer.schedule_poll_in(INIT_TICKS));
             } else if self.control.reg.is_set(Control::NEXT) {
                 // Update the SHA512 engine with a new block
                 self.sha256.update(self.block.data());
 
                 // Schedule a future call to poll() complete the operation.
-                //self.op_complete_action = Some(self.timer.schedule_poll_in(UPDATE_TICKS));
+                self.op_complete_action = Some(self.timer.schedule_poll_in(UPDATE_TICKS));
             }
         }
 
