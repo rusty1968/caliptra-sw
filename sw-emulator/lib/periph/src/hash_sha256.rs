@@ -176,12 +176,12 @@ impl HashSha256 {
             // Retrieve the hash
             self.state_machine.context.sha256.hash(self.hash.data_mut());
 
-            // Update Ready and Valid status bits
-            self.state_machine
-                .context
-                .status
-                .reg
-                .modify(Status::READY::SET + Status::VALID::SET);
+            // Send timer expired event to the state machine
+            let _ = self.state_machine.process_event(Events::TimerExpired);
+
+            if self.state_machine.context.wntz_j_reg >= self.state_machine.context.wntz_iter {
+                let _ = self.state_machine.process_event(Events::WntzComplete);
+            }
         }
     }
 
@@ -199,10 +199,6 @@ impl HashSha256 {
         &self.hash.data()[..self.state_machine.context.sha256.hash_len()]
     }
 
-    fn zeroize(&mut self) {
-        self.block.data_mut().fill(0);
-        self.hash.data_mut().fill(0);
-    }
 }
 
 pub struct WntzParams {
@@ -211,9 +207,6 @@ pub struct WntzParams {
     wntz_n_mode: bool,
     init: bool,
 }
-pub struct WntntzParamValue(pub WntzParams);
-pub struct PrefixValue(pub [u8; 22]);
-pub struct StatusRegisterValue(pub u32);
 
 pub struct BlockData(pub [u8; 64]);
 
@@ -223,15 +216,17 @@ pub struct CtlRegisterData {
 
 statemachine! {
     transitions: {
-        //WntntzDisabled + WriteCtl(WntntzParamValue) [wntnz_is_enabled] = WntntzIdle,
-        *WntntzDisabled + WriteCtlEvent(CtlRegisterData) [wntnz_is_enabled] = WntntzIdle,
-        WntntzDisabled + WriteBlock(BlockData) [always_ok]/hash_the_block = WntntzDisabled,
+        *WntntzDisabled + WriteCtlEvent(CtlRegisterData) [wntnz_is_enabled] = WntnzIdle,
+        WntntzDisabled + WriteBlock(BlockData) /hash_the_block = WntntzDisabled,
+        WntntzDisabled + TimerExpired [always_update_status] / update_status = WntntzDisabled,
         // If this is the first block after winterntiz enablement, then transition to WntnzFirst
-        WntntzIdle + WritePrefix(PrefixValue) [wntnz_can_start] = WntnzFirst,
-//        First + WriteBlock = Others,
-//        First + WriteStatus = Others,
-//        Others + WriteBlock = Others,
-//        Others + WriteStatus = Idle
+        // hash the first block and update status register to indicate wntnz_busy.
+        WntnzIdle + WriteBlock(BlockData) [wntnz_can_start]/wntnz_first_block = WntnzFirst,
+        // Upon timer expiration enqueue next block
+        WntnzFirst + TimerExpired [wntz_can_continue]/wntnz_next_block = WntnzOthers,
+        WntnzFirst + WntzComplete [always_clear]/ clear_wntz_busy = WntnzIdle,
+        WntnzOthers + TimerExpired [wntz_can_continue]/wntnz_next_block = WntnzOthers,
+        WntnzOthers + WntzComplete [always_clear]/ clear_wntz_busy = WntnzIdle,
 
     }
 }
@@ -256,7 +251,7 @@ struct Context {
     /// Winternitz n-mode.
     wntz_n_mode: bool,
     /// Winternitz iteration count (initialized by the first block after winterntiz enablement).
-    wntz_j_reg: u8,
+    wntz_j_reg: u16,
 }
 impl Context {
     pub fn new(clock: &Clock) -> Self {
@@ -306,20 +301,66 @@ impl StateMachineContext for Context {
         }
         Err(())
     }
-    fn wntnz_can_start(&mut self, first_block: &PrefixValue) -> Result<(), ()> {
-        self.wntz_j_reg = first_block.0[22];
-        self.wntz_prefix = first_block.0;
+    fn wntnz_can_start(&mut self, first_block: &BlockData) -> Result<(), ()> {
+        let wntz_j_reg = first_block.0[22];
 
-        if self.wntz_j_reg < self.wntz_iter as u8 {
+        if wntz_j_reg < self.wntz_iter as u8 {
             return Ok(());
         }
         Err(())
     }
-    fn always_ok(&mut self, event_data: &BlockData) -> Result<(), ()> {
+
+    fn always_clear(&mut self,) -> Result<(),()> {
+        Ok(())
+    }
+    fn wntz_can_continue(&mut self) -> Result<(), ()> {
+        if self.wntz_j_reg < self.wntz_iter {
+            return Ok(());
+        }
+        Err(())
+    }
+
+    fn always_update_status(&mut self) -> Result<(), ()> {
         Ok(())
     }
 
-    fn hash_the_block(&mut self, event_data: &BlockData) -> () {
+    fn wntnz_first_block(&mut self, first_block: &BlockData) {
+        self.wntz_j_reg = first_block.0[22] as u16;
+        self.wntz_prefix = first_block.0[0..22].try_into().unwrap();
+
+        self.status.reg.modify(Status::WNTZ_BUSY::SET);
+
+        self.hash_the_block(first_block);
+
+        self.wntz_j_reg += 1;
+    }
+
+    fn wntnz_next_block(&mut self) {
+
+        // Manufacture next block
+        let mut block = [0; SHA256_BLOCK_SIZE];
+        // copy prefix
+        block[0..22].copy_from_slice(&self.wntz_prefix);
+        block[22] = self.wntz_j_reg.try_into().unwrap();
+        // Copy the digest of the previous block
+        let mut digest: [u8; 32] = [0u8; 32];
+        self.sha256.hash(digest.as_mut());
+        block[23..55].copy_from_slice(&digest);
+        block[55] = 0x80;
+        block[62] = 0xb8;
+        block[63] = 0x01;
+
+        // Update the SHA512 engine with a new block
+        self.sha256.update(self.block.data());
+
+        // Schedule a future call to poll() complete the operation.
+        self.op_complete_action = Some(self.timer.schedule_poll_in(UPDATE_TICKS));
+
+        self.wntz_j_reg += 1;
+
+    }
+
+    fn hash_the_block(&mut self, event_data: &BlockData) {
         // Copy block data to the block register.
         self.block.data_mut().copy_from_slice(&event_data.0);
         if self.control.reg.is_set(Control::INIT) || self.control.reg.is_set(Control::NEXT) {
@@ -363,22 +404,26 @@ impl StateMachineContext for Context {
             self.zeroize();
         }
     }
+
+    fn update_status(&mut self) {
+        // Update Ready and Valid status bits
+        self.status
+            .reg
+            .modify(Status::READY::SET + Status::VALID::SET);
+    }
+
+    fn clear_wntz_busy(&mut self)  {
+        // Update Ready and Valid status bits
+        self.status
+            .reg
+            .modify(Status::WNTZ_BUSY::CLEAR);
+    }
 }
 
 impl Context {
     fn zeroize(&mut self) {
         self.block.data_mut().fill(0);
         self.hash.data_mut().fill(0);
-    }
-}
-
-// Construct WntzParams from the control register
-pub fn new_wntz_params(control: ReadWriteRegister<u32, Control::Register>) -> WntzParams {
-    WntzParams {
-        wntz_mode: control.reg.is_set(Control::WNTZ_MODE),
-        wntz_w: control.reg.read(Control::WNTZ_W),
-        wntz_n_mode: control.reg.is_set(Control::WNTZ_N_MODE),
-        init: control.reg.is_set(Control::INIT),
     }
 }
 
@@ -399,19 +444,6 @@ mod tests {
     const OFFSET_BLOCK: RvAddr = 0x80;
     const OFFSET_HASH: RvAddr = 0x100;
 
-    #[test]
-    fn test_new_wntz_params() {
-        // Build register with wntz enabled from field values
-        let control = ReadWriteRegister::new(0);
-        control.reg.modify(Control::INIT::SET);
-        control.reg.modify(Control::WNTZ_MODE::SET);
-        control.reg.modify(Control::WNTZ_W.val(4));
-        let params = new_wntz_params(control);
-        assert_eq!(params.wntz_mode, true);
-        assert_eq!(params.wntz_w, 4);
-        assert_eq!(params.wntz_n_mode, false);
-        assert_eq!(params.init, true);
-    }
     #[test]
     fn test_wntz_enabled_failure() {
         let wntz_ctx = Context::new(&Clock::new());
@@ -469,6 +501,136 @@ mod tests {
         let res = sm.process_event(Events::WriteCtlEvent(CtlRegisterData { control: val }));
         assert!(res.is_ok());
     }
+    #[test]
+    /// Attempt to perform one iteration of wntz.
+    fn test_wntz_one_iteration() {
+        let wntz_ctx = Context::new(&Clock::new());
+        // Create state machine
+        let mut sm = StateMachine::new(wntz_ctx);
+        assert!(matches!(
+            sm.state(),
+            States::WntntzDisabled
+        ));
+
+        // Write control register to enable winternitz
+        let control = ReadWriteRegister::new(0);
+        control.reg.modify(Control::WNTZ_MODE::SET);
+        control.reg.modify(Control::WNTZ_W.val(1));
+        control.reg.modify(Control::WNTZ_N_MODE::SET);
+        control.reg.modify(Control::INIT::SET);
+        // Read the data from control register
+        let val = control.reg.get();
+        let res = sm.process_event(Events::WriteCtlEvent(CtlRegisterData { control: val }));
+        assert!(res.is_ok());
+
+        assert!(matches!(
+            sm.state(),
+            States::WntnzIdle
+        ));
+       
+        let res = sm.process_event(Events::WriteBlock(BlockData([0;64])));
+        assert!(res.is_ok());
+
+        assert!(matches!(
+            sm.state(),
+            States::WntnzFirst
+        ));
+
+        assert!(sm.context.status.reg.is_set(Status::WNTZ_BUSY));
+
+        let res = sm.process_event(Events::TimerExpired);
+        assert!(res.is_err());
+
+ 
+        assert!(matches!(
+            sm.state(),
+            States::WntnzFirst
+        ));
+ 
+        let res = sm.process_event(Events::WntzComplete);
+        assert!(res.is_ok());
+
+        assert!(matches!(
+            sm.state(),
+            States::WntnzIdle
+        ));
+        // Make sure we clear the register after the first iteration.
+        assert!(!sm.context.status.reg.is_set(Status::WNTZ_BUSY));
+        
+    }
+
+    #[test]
+    /// Attempt to perform one iteration of wntz.
+    fn test_wntz_four_iterations() {
+        let wntz_ctx = Context::new(&Clock::new());
+        // Create state machine
+        let mut sm = StateMachine::new(wntz_ctx);
+        assert!(matches!(
+            sm.state(),
+            States::WntntzDisabled
+        ));
+
+        // Write control register to enable winternitz
+        let control = ReadWriteRegister::new(0);
+        control.reg.modify(Control::WNTZ_MODE::SET);
+        control.reg.modify(Control::WNTZ_W.val(4));
+        control.reg.modify(Control::WNTZ_N_MODE::SET);
+        control.reg.modify(Control::INIT::SET);
+        // Read the data from control register
+        let val = control.reg.get();
+        let res = sm.process_event(Events::WriteCtlEvent(CtlRegisterData { control: val }));
+        assert!(res.is_ok());
+
+        assert!(matches!(
+            sm.state(),
+            States::WntnzIdle
+        ));
+       
+        let res = sm.process_event(Events::WriteBlock(BlockData([0;64])));
+        assert!(res.is_ok());
+
+        assert!(matches!(
+            sm.state(),
+            States::WntnzFirst
+        ));
+
+        assert!(sm.context.status.reg.is_set(Status::WNTZ_BUSY));
+
+        loop {
+            println!("j = {}, iter= {}", sm.context.wntz_j_reg,  sm.context.wntz_iter);
+            let res = sm.process_event(Events::TimerExpired);
+            assert!(res.is_ok());
+    
+            // Make sure we keep the status as busy.
+            assert!(sm.context.status.reg.is_set(Status::WNTZ_BUSY));
+        
+            assert!(matches!(
+                sm.state(),
+                States::WntnzOthers
+            ));    
+ 
+            if sm.context.wntz_j_reg >= sm.context.wntz_iter {
+                let res = sm.process_event(Events::WntzComplete);
+                assert!(res.is_ok());
+        
+                break;    
+            }
+     
+        }
+ 
+        assert!(matches!(
+            sm.state(),
+            States::WntnzIdle
+        ));
+
+  
+        // Make sure we clear the register after iterations.
+        assert!(!sm.context.status.reg.is_set(Status::WNTZ_BUSY));
+       
+    }
+  
+
+
     #[test]
     fn test_name_read() {
         let mut sha256 = HashSha256::new(&Clock::new());
