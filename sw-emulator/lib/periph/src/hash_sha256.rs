@@ -103,12 +103,11 @@ pub struct HashSha256 {
     /// SHA256 engine
     sha256: Sha256,
 
-    timer: Timer,
-
+    //timer: Timer,
     op_complete_action: Option<ActionHandle>,
 
     /// Winternitz state machine
-    state_machine: StateMachine<WntnzContext>,
+    state_machine: StateMachine<Context>,
 }
 
 impl HashSha256 {
@@ -136,9 +135,8 @@ impl HashSha256 {
             status: ReadOnlyRegister::new(Status::READY::SET.value),
             block: ReadWriteMemory::new(),
             hash: ReadOnlyMemory::new(),
-            timer: Timer::new(clock),
             op_complete_action: None,
-            state_machine: StateMachine::new(WntnzContext::default()),
+            state_machine: StateMachine::new(Context::new(clock)),
         }
     }
 
@@ -178,13 +176,22 @@ impl HashSha256 {
                 self.sha256.update(self.block.data());
 
                 // Schedule a future call to poll() complete the operation.
-                self.op_complete_action = Some(self.timer.schedule_poll_in(INIT_TICKS));
+                self.op_complete_action = Some(
+                    self.state_machine
+                        .context
+                        .timer
+                        .schedule_poll_in(INIT_TICKS),
+                );
             } else if self.control.reg.is_set(Control::NEXT) {
                 // Update the SHA512 engine with a new block
                 self.sha256.update(self.block.data());
-
                 // Schedule a future call to poll() complete the operation.
-                self.op_complete_action = Some(self.timer.schedule_poll_in(UPDATE_TICKS));
+                self.op_complete_action = Some(
+                    self.state_machine
+                        .context
+                        .timer
+                        .schedule_poll_in(UPDATE_TICKS),
+                );
             }
         }
 
@@ -221,11 +228,13 @@ impl HashSha256 {
             init: self.control.reg.is_set(Control::INIT),
         };
 
-        match self
+        let _ = self
             .state_machine
-            .process_event(Events::WriteCtl(WntntzParamValue(params)))
-        {
-            Ok(_) => {
+            .process_event(Events::WriteCtl(WntntzParamValue(params)));
+
+        match self.state_machine.state() {
+            States::WntntzDisabled => self.hash_non_wntntz(size, val),
+            _ => {
                 // for ( j = a; j < 2^w - 1; j = j + 1 ) {
                 //        tmp = H(I || u32str(q) || u16str(i) || u8str(j) || tmp)
                 //}
@@ -238,13 +247,17 @@ impl HashSha256 {
                 // Hash the first block
                 self.hash_non_wntntz(size, val)
             }
-            Err(_) => self.hash_non_wntntz(size, val),
         }
     }
 
     /// Called by Bus::poll() to indicate that time has passed
     fn poll(&mut self) {
-        if self.timer.fired(&mut self.op_complete_action) {
+        if self
+            .state_machine
+            .context
+            .timer
+            .fired(&mut self.op_complete_action)
+        {
             // Retrieve the hash
             self.sha256.hash(self.hash.data_mut());
 
@@ -285,9 +298,17 @@ pub struct WntntzParamValue(pub WntzParams);
 pub struct PrefixValue(pub [u8; 22]);
 pub struct StatusRegisterValue(pub u32);
 
+pub struct BlockData(pub [u8; 64]);
+
+pub struct WriteCtlData {
+    pub control: u32,
+    pub block: [u8; 64],
+}
+
 statemachine! {
     transitions: {
         *WntntzDisabled + WriteCtl(WntntzParamValue) [wntnz_is_enabled] = WntntzIdle,
+        WntntzDisabled + WriteBlock(BlockData) [always_ok]/hash_the_block = WntntzDisabled,
         // If this is the first block after winterntiz enablement, then transition to WntnzFirst
         WntntzIdle + WritePrefix(PrefixValue) [wntnz_can_start] = WntnzFirst,
 //        First + WriteBlock = Others,
@@ -297,7 +318,17 @@ statemachine! {
 
     }
 }
-struct WntnzContext {
+struct Context {
+    control: ReadWriteRegister<u32, Control::Register>,
+    status: ReadOnlyRegister<u32, Status::Register>,
+    block: ReadWriteMemory<SHA256_BLOCK_SIZE>,
+    hash: ReadOnlyMemory<SHA256_HASH_SIZE>,
+
+    /// SHA256 engine
+    sha256: Sha256,
+    /// Timer
+    timer: Timer,
+
     /// Winternitz prefix. { I, q, i } // 16B + 4B + 2B  = 22B
     wntz_prefix: [u8; 22],
     /// Winternitz parameter.
@@ -307,18 +338,24 @@ struct WntnzContext {
     /// Winternitz iteration count (initialized by the first block after winterntiz enablement).
     wntz_j_reg: u8,
 }
-impl Default for WntnzContext {
-    fn default() -> Self {
-        WntnzContext {
+impl Context {
+    pub fn new(clock: &Clock) -> Self {
+        Context {
             wntz_prefix: [0; 22],
             wntz_iter: 0,
             wntz_n_mode: false,
             wntz_j_reg: 0,
+            control: ReadWriteRegister::new(0),
+            status: ReadOnlyRegister::new(Status::READY::SET.value),
+            block: ReadWriteMemory::new(),
+            sha256: Sha256::new(Sha256Mode::Sha256),
+            hash: ReadOnlyMemory::new(),
+            timer: Timer::new(clock),
         }
     }
 }
 
-impl StateMachineContext for WntnzContext {
+impl StateMachineContext for Context {
     fn wntnz_is_enabled(&mut self, params: &WntntzParamValue) -> Result<(), ()> {
         // If WNTZ_MODE is set and first is set, then enable winternitz
         if params.0.wntz_mode && params.0.init {
@@ -346,6 +383,59 @@ impl StateMachineContext for WntnzContext {
             return Ok(());
         }
         Err(())
+    }
+    fn always_ok(&mut self, event_data: &BlockData) -> Result<(), ()> {
+        Ok(())
+    }
+
+    fn hash_the_block(&mut self, event_data: &BlockData) -> () {
+        if self.control.reg.is_set(Control::INIT) || self.control.reg.is_set(Control::NEXT) {
+            // Reset the Ready and Valid status bits
+            self.status
+                .reg
+                .modify(Status::READY::CLEAR + Status::VALID::CLEAR);
+
+            if self.control.reg.is_set(Control::INIT) {
+                // Initialize the SHA512 engine with the mode.
+                let mut mode = Sha256Mode::Sha256;
+                let modebits = self.control.reg.read(Control::MODE);
+
+                match modebits {
+                    0 => {
+                        mode = Sha256Mode::Sha224;
+                    }
+                    1 => {
+                        mode = Sha256Mode::Sha256;
+                    }
+                    _ => (),
+                }
+
+                self.sha256.reset(mode);
+
+                // Update the SHA256 engine with a new block
+                self.sha256.update(self.block.data());
+
+                // Schedule a future call to poll() complete the operation.
+                //self.op_complete_action = Some(self.timer.schedule_poll_in(INIT_TICKS));
+            } else if self.control.reg.is_set(Control::NEXT) {
+                // Update the SHA512 engine with a new block
+                self.sha256.update(self.block.data());
+
+                // Schedule a future call to poll() complete the operation.
+                //self.op_complete_action = Some(self.timer.schedule_poll_in(UPDATE_TICKS));
+            }
+        }
+
+        if self.control.reg.is_set(Control::ZEROIZE) {
+            self.zeroize();
+        }
+    }
+}
+
+impl Context {
+    fn zeroize(&mut self) {
+        self.block.data_mut().fill(0);
+        self.hash.data_mut().fill(0);
     }
 }
 
@@ -391,7 +481,7 @@ mod tests {
     }
     #[test]
     fn test_wntz_enabled_failure() {
-        let wntz_ctx = WntnzContext::default();
+        let wntz_ctx = Context::new(&Clock::new());
         // Create state machine
         let mut sm = StateMachine::new(wntz_ctx);
 
@@ -428,7 +518,7 @@ mod tests {
 
     #[test]
     fn test_wntz_enabled_success() {
-        let wntz_ctx = WntnzContext::default();
+        let wntz_ctx = Context::new(&Clock::new());
         // Create state machine
         let mut sm = StateMachine::new(wntz_ctx);
         // Write control register to enable winternitz
