@@ -12,11 +12,12 @@ Abstract:
 
 --*/
 
+
 use caliptra_emu_bus::{
     ActionHandle, BusError, Clock, ReadOnlyMemory, ReadOnlyRegister, ReadWriteMemory,
     ReadWriteRegister, Timer,
 };
-use caliptra_emu_crypto::{Sha256, Sha256Mode};
+use caliptra_emu_crypto::{EndianessTransform, Sha256, Sha256Mode};
 use caliptra_emu_derive::Bus;
 use caliptra_emu_types::{RvData, RvSize};
 use tock_registers::interfaces::{ReadWriteable, Readable, Writeable};
@@ -24,6 +25,7 @@ use tock_registers::register_bitfields;
 
 use smlang::statemachine;
 
+// Register bitfields for the SHA256 peripheral
 register_bitfields! [
     u32,
 
@@ -38,9 +40,8 @@ register_bitfields! [
         ZEROIZE OFFSET(3) NUMBITS(1) [],
         WNTZ_MODE OFFSET(4) NUMBITS(1) [],
         WNTZ_W OFFSET(5)NUMBITS(4) [],
-        WNTZ_N_MODE OFFSET(6) NUMBITS(1) [],
-        RSVD OFFSET(7) NUMBITS(22) [],
-    ],
+        WNTZ_N_MODE OFFSET(9) NUMBITS(1) [],
+            ],
 
     /// Status Register Fields
     Status[
@@ -50,10 +51,12 @@ register_bitfields! [
     ],
 ];
 
-
-const SHA256_BLOCK_SIZE: usize = 64;
+const SHA256_BLOCK_BYTE_SIZE: usize = 64;
 
 const SHA256_HASH_SIZE: usize = 32;
+
+const WNTZ_PREFIX_SIZE:usize = 22;     
+
 
 /// The number of CPU clock cycles it takes to perform initialization action.
 const INIT_TICKS: u64 = 1000;
@@ -88,23 +91,19 @@ pub struct HashSha256 {
     control: ReadWriteRegister<u32, Control::Register>,
 
     /// Status register
-    #[register(offset = 0x0000_0018)]
-    status: ReadOnlyRegister<u32, Status::Register>,
+    #[register(offset = 0x0000_0018, read_fn = read_status)]
+    _status: ReadOnlyRegister<u32, Status::Register>,
 
     /// SHA256 Block Memory
     #[peripheral(offset = 0x0000_0080, mask = 0x0000_007f)]
-    block: ReadWriteMemory<SHA256_BLOCK_SIZE>,
+    block: ReadWriteMemory<SHA256_BLOCK_BYTE_SIZE>,
 
     /// SHA256 Hash Memory
     #[peripheral(offset = 0x0000_0100, mask = 0x0000_00ff)]
     hash: ReadOnlyMemory<SHA256_HASH_SIZE>,
 
-    /// SHA256 engine
-    sha256: Sha256,
-
-    timer: Timer,
-
-    op_complete_action: Option<ActionHandle>,
+    /// Winternitz state machine
+    state_machine: StateMachine<Context>,
 }
 
 impl HashSha256 {
@@ -123,20 +122,20 @@ impl HashSha256 {
     /// Create a new instance of SHA-512 Engine
     pub fn new(clock: &Clock) -> Self {
         Self {
-            sha256: Sha256::new(Sha256Mode::Sha256), // Default SHA256 mode
             name0: ReadOnlyRegister::new(Self::NAME0_VAL),
             name1: ReadOnlyRegister::new(Self::NAME1_VAL),
             version0: ReadOnlyRegister::new(Self::VERSION0_VAL),
             version1: ReadOnlyRegister::new(Self::VERSION1_VAL),
             control: ReadWriteRegister::new(0),
-            status: ReadOnlyRegister::new(Status::READY::SET.value),
+            _status: ReadOnlyRegister::new(Status::READY::SET.value),
             block: ReadWriteMemory::new(),
             hash: ReadOnlyMemory::new(),
-            timer: Timer::new(clock),
-            op_complete_action: None,
+            state_machine: StateMachine::new(Context::new(clock)),
         }
     }
-
+    pub fn read_status(&self, _size: RvSize) -> Result<u32, BusError> {
+        Ok(self.state_machine.context.status.reg.get())
+    }
     /// On Write callback for `control` register
     ///
     /// # Arguments
@@ -156,6 +155,251 @@ impl HashSha256 {
         // Set the control register
         self.control.reg.set(val);
 
+        // Send WriteCtlEvent to the state machine
+        let _ = self
+            .state_machine
+            .process_event(Events::WriteCtlEvent(CtlRegisterData { control: val }));
+
+        let block = self.block.data();
+        let block_event = BlockData(*block);
+   
+        // Send block to the state machine
+        let _ = self
+            .state_machine
+            .process_event(Events::WriteBlock(block_event));
+
+        Ok(())
+    }
+
+    /// Called by Bus::poll() to indicate that time has passed
+    fn poll(&mut self) {
+        if self
+            .state_machine
+            .context
+            .timer
+            .fired(&mut self.state_machine.context.op_complete_action)
+        {
+            // Retrieve the hash
+            self.state_machine.context.sha256.hash(self.hash.data_mut());
+
+            // Send timer expired event to the state machine
+            let _ = self.state_machine.process_event(Events::TimerExpired);
+
+            if u16::from(self.state_machine.context.wntz_j_reg) >= self.state_machine.context.wntz_iter {
+                let _ = self.state_machine.process_event(Events::WntzComplete);
+            }
+        }
+    }
+
+    /// Called by Bus::warm_reset() to indicate a warm reset
+    fn warm_reset(&mut self) {
+        // TODO: Reset registers
+    }
+
+    /// Called by Bus::update_reset() to indicate an update reset
+    fn update_reset(&mut self) {
+        // TODO: Reset registers
+    }
+
+    pub fn hash(&self) -> &[u8] {
+        &self.hash.data()[..self.state_machine.context.sha256.hash_len()]
+    }
+
+}
+
+pub struct WntzParams {
+    wntz_mode: bool,
+    wntz_w: u32,
+    wntz_n_mode: bool,
+    init: bool,
+}
+
+pub struct BlockData(pub [u8; 64]);
+
+pub struct CtlRegisterData {
+    pub control: u32,
+}
+
+statemachine! {
+    transitions: {
+        *WntntzDisabled + WriteCtlEvent(CtlRegisterData) [wntnz_is_enabled] = WntnzIdle,
+        WntntzDisabled + WriteBlock(BlockData) /hash_the_block = WntntzDisabled,
+        WntntzDisabled + TimerExpired [always_update_status] / update_status = WntntzDisabled,
+        // If this is the first block after winternitz enablement, then transition to WntnzFirst
+        // hash the first block and update status register to indicate wntnz_busy.
+        WntnzIdle + WriteBlock(BlockData) [wntnz_can_start]/wntnz_first_block = WntnzFirst,
+        // Upon timer expiration enqueue next block
+        WntnzFirst + TimerExpired [wntz_can_continue]/wntnz_next_block = WntnzOthers,
+        WntnzFirst + WntzComplete [always_clear]/ clear_wntz_busy = WntntzDisabled,
+        WntnzOthers + TimerExpired [wntz_can_continue]/wntnz_next_block = WntnzOthers,
+        WntnzOthers + WntzComplete [always_clear]/ clear_wntz_busy = WntntzDisabled,
+
+    }
+}
+struct Context {
+    control: ReadWriteRegister<u32, Control::Register>,
+    status: ReadOnlyRegister<u32, Status::Register>,
+    block: ReadWriteMemory<SHA256_BLOCK_BYTE_SIZE>,
+    hash: ReadOnlyMemory<SHA256_HASH_SIZE>,
+
+    /// SHA256 engine
+    sha256: Sha256,
+    /// Timer
+    timer: Timer,
+
+    /// Action handle for the operation completion
+    op_complete_action: Option<ActionHandle>,
+
+    /// Winternitz prefix. { I, q, i, j } // 16B + 4B + 2B + 1B = 23B
+    wntz_prefix: [u8; WNTZ_PREFIX_SIZE],
+    /// Winternitz parameter.
+    wntz_iter: u16,
+    /// Winternitz n-mode.
+    wntz_n_mode: bool,
+    /// Winternitz iteration count (initialized by the first block after winterntiz enablement).
+    wntz_j_reg: u8,
+}
+impl Context {
+    pub fn new(clock: &Clock) -> Self {
+        Context {
+            wntz_prefix: [0; WNTZ_PREFIX_SIZE],
+            wntz_iter: 0,
+            wntz_n_mode: false,
+            wntz_j_reg: 0,
+            control: ReadWriteRegister::new(0),
+            status: ReadOnlyRegister::new(Status::READY::SET.value),
+            block: ReadWriteMemory::new(),
+            sha256: Sha256::new(Sha256Mode::Sha256),
+            hash: ReadOnlyMemory::new(),
+            timer: Timer::new(clock),
+            op_complete_action: None,
+        }
+    }
+}
+
+impl StateMachineContext for Context {
+    fn wntnz_is_enabled(&mut self, val: &CtlRegisterData) -> Result<(), ()> {
+        println!("wntnz_is_enabled");
+        // Set the control register
+        self.control.reg.set(val.control);
+
+        let params = WntzParams {
+            wntz_mode: self.control.reg.is_set(Control::WNTZ_MODE),
+            wntz_w: self.control.reg.read(Control::WNTZ_W),
+            wntz_n_mode: self.control.reg.is_set(Control::WNTZ_N_MODE),
+            init: self.control.reg.is_set(Control::INIT),
+        };
+
+        // If WNTZ_MODE is set and first is set, then enable winternitz
+        if params.wntz_mode && params.init {
+            // Extract W value
+            let w_value = params.wntz_w;
+            // Exract N mode
+            self.wntz_n_mode = params.wntz_n_mode;
+            // Initialize winternitz iteration count
+            let result = match w_value {
+                1 | 2 | 4 | 8 => {
+                    self.wntz_iter = (1 << w_value) - 1;
+                    Ok(())
+                }
+                _ => Err(()),
+            };
+            return result;
+        }
+        Err(())
+    }
+    fn wntnz_can_start(&mut self, first_block: &BlockData) -> Result<(), ()> {
+
+        let mut t_buffer = [0u8;64];
+        t_buffer.copy_from_slice(&first_block.0[..]);
+        t_buffer.to_big_endian();
+ 
+        
+        // initalize counter
+        let wntz_j_reg = t_buffer[WNTZ_PREFIX_SIZE];
+
+        if wntz_j_reg < self.wntz_iter as u8 {
+            self.wntz_j_reg = wntz_j_reg;
+            self.wntz_prefix = t_buffer[0..WNTZ_PREFIX_SIZE].try_into().unwrap();
+            return Ok(());
+        }
+        Err(())
+    }
+
+    fn always_clear(&mut self,) -> Result<(),()> {
+        Ok(())
+    }
+    fn wntz_can_continue(&mut self) -> Result<(), ()> {
+        if self.wntz_j_reg < self.wntz_iter as u8 {
+            return Ok(());
+        }
+        Err(())
+    }
+
+    fn always_update_status(&mut self) -> Result<(), ()> {
+        Ok(())
+    }
+
+    fn wntnz_first_block(&mut self, first_block: &BlockData) {
+
+          
+        self.status.reg.modify(Status::WNTZ_BUSY::SET);
+
+        self.hash_the_block(first_block);
+
+        self.wntz_j_reg += 1;
+    }
+
+    fn wntnz_next_block(&mut self) {
+        // tmp = digest(prev_block)
+        //             16       4           2            1
+        //             b[0..16] b[16..20]   b[20..22]    b[22]   b[23..23+hash_len]
+        // tmp = Hash (I ||     u32str(q) ||u16str(i) || j    || tmp )
+        const SHA256_BLOCK_LEN_OFFSET: usize = 56;
+        const DIGEST_OFFSET : usize = 23;
+    
+        // Code lifted from drivers.
+        fn set_block_len(buf_size: usize, block: &mut [u8; SHA256_BLOCK_BYTE_SIZE]) {
+            let bit_len = (buf_size as u64) << 3;
+            block[SHA256_BLOCK_LEN_OFFSET..].copy_from_slice(&bit_len.to_be_bytes());
+        }
+      
+
+        // Create next block
+        let mut block = [0; SHA256_BLOCK_BYTE_SIZE];
+        // copy prefix as received in the first block
+        block[0..WNTZ_PREFIX_SIZE].copy_from_slice(&self.wntz_prefix);
+        // Concatenate with the iteration counter
+        block[WNTZ_PREFIX_SIZE] = self.wntz_j_reg;
+        // Copy the digest of the previous block
+        let mut digest: [u8; SHA256_HASH_SIZE] = [0u8; SHA256_HASH_SIZE];
+
+        // digest is returned as a list of big endian dwords
+        self.sha256.hash(digest.as_mut());
+        // Append it to the block.
+        
+        let hash_len = self.sha256.hash_len();
+        block[DIGEST_OFFSET..DIGEST_OFFSET+hash_len].copy_from_slice(&digest[..hash_len]);
+
+        // need padding.
+        block[DIGEST_OFFSET+hash_len] = 0b1000_0000;
+
+        set_block_len(DIGEST_OFFSET + hash_len, &mut block);
+
+        // Update the SHA512 engine with a new block
+        self.sha256.update(self.block.data());
+
+        // Schedule a future call to poll() complete the operation.
+        self.op_complete_action = Some(self.timer.schedule_poll_in(UPDATE_TICKS));
+
+
+        self.wntz_j_reg += 1;
+
+    }
+
+    fn hash_the_block(&mut self, event_data: &BlockData) {
+        // Copy block data to the block register.
+        self.block.data_mut().copy_from_slice(&event_data.0);
         if self.control.reg.is_set(Control::INIT) || self.control.reg.is_set(Control::NEXT) {
             // Reset the Ready and Valid status bits
             self.status
@@ -174,7 +418,7 @@ impl HashSha256 {
                     1 => {
                         mode = Sha256Mode::Sha256;
                     }
-                    _ => Err(BusError::StoreAccessFault)?,
+                    _ => (),
                 }
 
                 self.sha256.reset(mode);
@@ -196,54 +440,37 @@ impl HashSha256 {
         if self.control.reg.is_set(Control::ZEROIZE) {
             self.zeroize();
         }
-
-        Ok(())
     }
 
-    /// Called by Bus::poll() to indicate that time has passed
-    fn poll(&mut self) {
-        if self.timer.fired(&mut self.op_complete_action) {
-            // Retrieve the hash
-            self.sha256.hash(self.hash.data_mut());
-
-            // Update Ready and Valid status bits
-            self.status
-                .reg
-                .modify(Status::READY::SET + Status::VALID::SET);
-        }
+    fn update_status(&mut self) {
+        
+        self.sha256.hash(self.hash.data_mut());
+        // Update Ready and Valid status bits
+        self.status
+            .reg
+            .modify(Status::READY::SET + Status::VALID::SET);
     }
 
-    /// Called by Bus::warm_reset() to indicate a warm reset
-    fn warm_reset(&mut self) {
-        // TODO: Reset registers
-    }
+    fn clear_wntz_busy(&mut self)  {
+        // Update Ready and Valid status bits
+        self.status
+            .reg
+            .modify(Status::WNTZ_BUSY::CLEAR);
+        // Update Ready and Valid status bits
+        self.status
+            .reg
+            .modify(Status::READY::SET + Status::VALID::SET);
 
-    /// Called by Bus::update_reset() to indicate an update reset
-    fn update_reset(&mut self) {
-        // TODO: Reset registers
     }
+}
 
-    pub fn hash(&self) -> &[u8] {
-        &self.hash.data()[..self.sha256.hash_len()]
-    }
-
+impl Context {
     fn zeroize(&mut self) {
         self.block.data_mut().fill(0);
         self.hash.data_mut().fill(0);
     }
 }
 
-statemachine! {
-    transitions: {
-        *Idle + WriteCtl = First,
-        First + WriteCtl = Others,
-        Others +Event3 = Idle
-
-    }
-}
-
-struct WntnzContext;
-impl StateMachineContext for WntnzContext { }
 
 
 #[cfg(test)]
@@ -262,6 +489,204 @@ mod tests {
     const OFFSET_STATUS: RvAddr = 0x18;
     const OFFSET_BLOCK: RvAddr = 0x80;
     const OFFSET_HASH: RvAddr = 0x100;
+
+    #[test]
+    fn test_wntz_enabled_failure() {
+        let wntz_ctx = Context::new(&Clock::new());
+        // Create state machine
+        let mut sm = StateMachine::new(wntz_ctx);
+
+        // Attempt to enable winterntiz with an incorrect w value
+        let control = ReadWriteRegister::new(0);
+        control.reg.modify(Control::WNTZ_MODE::SET);
+        control.reg.modify(Control::WNTZ_W.val(3));
+        control.reg.modify(Control::WNTZ_N_MODE::SET);
+        control.reg.modify(Control::INIT::SET);
+        let val = control.reg.get();
+
+        let res = sm.process_event(Events::WriteCtlEvent(CtlRegisterData { control: val }));
+        assert!(res.is_err());
+
+        // Enable winternitz without init via control register
+        let control = ReadWriteRegister::new(0);
+        control.reg.modify(Control::WNTZ_MODE::SET);
+        control.reg.modify(Control::WNTZ_W.val(4));
+        control.reg.modify(Control::WNTZ_N_MODE::SET);
+        // Read the data from control register
+        let val = control.reg.get();
+        let res = sm.process_event(Events::WriteCtlEvent(CtlRegisterData { control: val }));
+        assert!(res.is_err());
+
+        // Enable winternitz without wntz mode via control register
+        let control = ReadWriteRegister::new(0);
+        control.reg.modify(Control::WNTZ_W.val(4));
+        control.reg.modify(Control::WNTZ_N_MODE::SET);
+        control.reg.modify(Control::INIT::SET);
+        // Read the data from control register
+        let val = control.reg.get();
+        let res = sm.process_event(Events::WriteCtlEvent(CtlRegisterData { control: val }));
+        assert!(res.is_err());
+    }
+
+    #[test]
+    /// Attempt to enable winterntiz with correct parameters.
+    /// wntz_mode = true, wntz_w = 4, wntz_n_mode = true, init = true
+    fn test_wntz_enabled_success() {
+        let wntz_ctx = Context::new(&Clock::new());
+        // Create state machine
+        let mut sm = StateMachine::new(wntz_ctx);
+
+        // Write control register to enable winternitz
+        let control = ReadWriteRegister::new(0);
+        control.reg.modify(Control::WNTZ_MODE::SET);
+        control.reg.modify(Control::WNTZ_W.val(4));
+        control.reg.modify(Control::WNTZ_N_MODE::SET);
+        control.reg.modify(Control::INIT::SET);
+        // Read the data from control register
+        let val = control.reg.get();
+        let res = sm.process_event(Events::WriteCtlEvent(CtlRegisterData { control: val }));
+        assert!(res.is_ok());
+    }
+    #[test]
+    /// Attempt to perform one iteration of wntz.
+    fn test_wntz_one_iteration() {
+        let wntz_ctx = Context::new(&Clock::new());
+        // Create state machine
+        let mut sm = StateMachine::new(wntz_ctx);
+        assert!(matches!(
+            sm.state(),
+            States::WntntzDisabled
+        ));
+
+        // Write control register to enable winternitz
+        let control = ReadWriteRegister::new(0);
+        control.reg.modify(Control::WNTZ_MODE::SET);
+        control.reg.modify(Control::WNTZ_W.val(1));
+        control.reg.modify(Control::WNTZ_N_MODE::SET);
+        control.reg.modify(Control::INIT::SET);
+        // Read the data from control register
+        let val = control.reg.get();
+        let res = sm.process_event(Events::WriteCtlEvent(CtlRegisterData { control: val }));
+        assert!(res.is_ok());
+
+        assert!(matches!(
+            sm.state(),
+            States::WntnzIdle
+        ));
+
+        let mut block_data = BlockData([0;64]);
+        block_data.0[21] = 15;
+       
+        let res = sm.process_event(Events::WriteBlock(BlockData([0;64])));
+        assert!(res.is_ok());
+
+        assert!(matches!(
+            sm.state(),
+            States::WntnzFirst
+        ));
+
+        assert!(sm.context.status.reg.is_set(Status::WNTZ_BUSY));
+
+        let res = sm.process_event(Events::TimerExpired);
+        assert!(res.is_err());
+
+ 
+        assert!(matches!(
+            sm.state(),
+            States::WntnzFirst
+        ));
+ 
+        let res = sm.process_event(Events::WntzComplete);
+        assert!(res.is_ok());
+
+        assert!(matches!(
+            sm.state(),
+            States::WntntzDisabled
+        ));
+        // Make sure we clear the register after the first iteration.
+        assert!(!sm.context.status.reg.is_set(Status::WNTZ_BUSY));
+        
+    }
+
+    #[test]
+    /// Attempt to perform one iteration of wntz.
+    fn test_wntz_many_iterations() {
+        let wntz_ctx = Context::new(&Clock::new());
+        // Create state machine
+        let mut sm = StateMachine::new(wntz_ctx);
+        assert!(matches!(
+            sm.state(),
+            States::WntntzDisabled
+        ));
+
+        // Write control register to enable winternitz
+        let control = ReadWriteRegister::new(0);
+        control.reg.modify(Control::WNTZ_MODE::SET);
+        control.reg.modify(Control::WNTZ_W.val(4));
+        control.reg.modify(Control::WNTZ_N_MODE::SET);
+        control.reg.modify(Control::INIT::SET);
+        // Read the data from control register
+        let val = control.reg.get();
+        let res = sm.process_event(Events::WriteCtlEvent(CtlRegisterData { control: val }));
+        assert!(res.is_ok());
+
+        assert!(matches!(
+            sm.state(),
+            States::WntnzIdle
+        ));
+       
+        let res = sm.process_event(Events::WriteBlock(BlockData([0;64])));
+        assert!(res.is_ok());
+
+        assert!(matches!(
+            sm.state(),
+            States::WntnzFirst
+        ));
+
+        assert!(sm.context.status.reg.is_set(Status::WNTZ_BUSY));
+
+        loop {
+            
+            let res = sm.process_event(Events::TimerExpired);
+            assert!(res.is_ok());
+    
+            // Make sure we keep the status as busy.
+            assert!(sm.context.status.reg.is_set(Status::WNTZ_BUSY));
+        
+            assert!(matches!(
+                sm.state(),
+                States::WntnzOthers
+            ));    
+ 
+            if sm.context.wntz_j_reg >= sm.context.wntz_iter as u8 {
+                let res = sm.process_event(Events::WntzComplete);
+                assert!(res.is_ok());
+        
+                break;    
+            }
+     
+        }
+        // Make sure we clear the register after iterations.
+        assert!(!sm.context.status.reg.is_set(Status::WNTZ_BUSY));
+
+        let s = match sm.state() {
+            States::WntnzFirst => "States::WntnzFirst",
+            States::WntnzIdle  => "States::WntnzIdle",
+            States::WntnzOthers => "States::WntnzOthers",
+            States::WntntzDisabled => "States::WntntzDisabled", 
+        };
+        println!("{}", s);
+ 
+        assert!(matches!(
+            sm.state(),
+            States::WntntzDisabled
+        ));
+
+  
+       
+    }
+  
+
 
     #[test]
     fn test_name_read() {
@@ -305,7 +730,7 @@ mod tests {
     #[test]
     fn test_block_read_write() {
         let mut sha256 = HashSha256::new(&Clock::new());
-        for addr in (OFFSET_BLOCK..(OFFSET_BLOCK + SHA256_BLOCK_SIZE as u32)).step_by(4) {
+        for addr in (OFFSET_BLOCK..(OFFSET_BLOCK + SHA256_BLOCK_BYTE_SIZE as u32)).step_by(4) {
             assert_eq!(sha256.write(RvSize::Word, addr, u32::MAX).ok(), Some(()));
             assert_eq!(sha256.read(RvSize::Word, addr).ok(), Some(u32::MAX));
         }
@@ -333,8 +758,8 @@ mod tests {
         }
 
         // Compute the total bytes and total blocks required for the final message.
-        let totalblocks = ((data.len() + 8) + SHA256_BLOCK_SIZE) / SHA256_BLOCK_SIZE;
-        let totalbytes = totalblocks * SHA256_BLOCK_SIZE;
+        let totalblocks = ((data.len() + 8) + SHA256_BLOCK_BYTE_SIZE) / SHA256_BLOCK_BYTE_SIZE;
+        let totalbytes = totalblocks * SHA256_BLOCK_BYTE_SIZE;
 
         let mut block_arr = vec![0; totalbytes];
 
@@ -352,13 +777,13 @@ mod tests {
 
         // Process each block via the SHA engine.
         for idx in 0..totalblocks {
-            for i in (0..SHA256_BLOCK_SIZE).step_by(4) {
+            for i in (0..SHA256_BLOCK_BYTE_SIZE).step_by(4) {
                 assert_eq!(
                     sha256
                         .write(
                             RvSize::Word,
                             OFFSET_BLOCK + i as RvAddr,
-                            make_word((idx * SHA256_BLOCK_SIZE) + i, &block_arr)
+                            make_word((idx * SHA256_BLOCK_BYTE_SIZE) + i, &block_arr)
                         )
                         .ok(),
                     Some(())
