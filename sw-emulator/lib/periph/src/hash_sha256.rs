@@ -16,12 +16,13 @@ use caliptra_emu_bus::{
     ActionHandle, BusError, Clock, ReadOnlyMemory, ReadOnlyRegister, ReadWriteMemory,
     ReadWriteRegister, Timer,
 };
-use caliptra_emu_crypto::{Sha256, Sha256Mode};
+use caliptra_emu_crypto::{EndianessTransform, Sha256, Sha256Mode};
 use caliptra_emu_derive::Bus;
 use caliptra_emu_types::{RvData, RvSize};
 use tock_registers::interfaces::{ReadWriteable, Readable, Writeable};
 use tock_registers::register_bitfields;
 
+// Register bitfields for the SHA256 peripheral
 register_bitfields! [
     u32,
 
@@ -34,13 +35,16 @@ register_bitfields! [
             SHA256 = 0b01,
         ],
         ZEROIZE OFFSET(3) NUMBITS(1) [],
-        RSVD OFFSET(4) NUMBITS(28) [],
-    ],
+        WNTZ_MODE OFFSET(4) NUMBITS(1) [],
+        WNTZ_W OFFSET(5)NUMBITS(4) [],
+        WNTZ_N_MODE OFFSET(9) NUMBITS(1) [],
+            ],
 
     /// Status Register Fields
     Status[
         READY OFFSET(0) NUMBITS(1) [],
         VALID OFFSET(1) NUMBITS(1) [],
+        WNTZ_BUSY OFFSET(2) NUMBITS(1) [],
     ],
 ];
 
@@ -130,25 +134,8 @@ impl HashSha256 {
         }
     }
 
-    /// On Write callback for `control` register
-    ///
-    /// # Arguments
-    ///
-    /// * `size` - Size of the write
-    /// * `val` - Data to write
-    ///
-    /// # Error
-    ///
-    /// * `BusError` - Exception with cause `BusError::StoreAccessFault` or `BusError::StoreAddrMisaligned`
-    pub fn on_write_control(&mut self, size: RvSize, val: RvData) -> Result<(), BusError> {
-        // Writes have to be Word aligned
-        if size != RvSize::Word {
-            Err(BusError::StoreAccessFault)?
-        }
 
-        // Set the control register
-        self.control.reg.set(val);
-
+    pub fn hash_block(&mut self, block: &[u8;64]) -> Result<(), BusError> {
         if self.control.reg.is_set(Control::INIT) || self.control.reg.is_set(Control::NEXT) {
             // Reset the Ready and Valid status bits
             self.status
@@ -173,7 +160,7 @@ impl HashSha256 {
                 self.sha256.reset(mode);
 
                 // Update the SHA256 engine with a new block
-                self.sha256.update(self.block.data());
+                self.sha256.update(block);
 
                 // Schedule a future call to poll() complete the operation.
                 self.op_complete_action = Some(self.timer.schedule_poll_in(INIT_TICKS));
@@ -184,7 +171,114 @@ impl HashSha256 {
                 // Schedule a future call to poll() complete the operation.
                 self.op_complete_action = Some(self.timer.schedule_poll_in(UPDATE_TICKS));
             }
+        }        
+        Ok(())
+    }
+
+    /// On Write callback for `control` register
+    ///
+    /// # Arguments
+    ///
+    /// * `size` - Size of the write
+    /// * `val` - Data to write
+    ///
+    /// # Error
+    ///
+    /// * `BusError` - Exception with cause `BusError::StoreAccessFault` or `BusError::StoreAddrMisaligned`
+    pub fn on_write_control(&mut self, size: RvSize, val: RvData) -> Result<(), BusError> {
+        // Writes have to be Word aligned
+        if size != RvSize::Word {
+            Err(BusError::StoreAccessFault)?
         }
+
+        // Set the control register
+        self.control.reg.set(val);
+
+        pub struct WntzParams {
+            wntz_mode: bool,
+            wntz_w: u32,
+            _wntz_n_mode: bool,
+            init: bool,
+        }
+
+        let params = WntzParams {
+            wntz_mode: self.control.reg.is_set(Control::WNTZ_MODE),
+            wntz_w: self.control.reg.read(Control::WNTZ_W),
+            _wntz_n_mode: self.control.reg.is_set(Control::WNTZ_N_MODE),
+            init: self.control.reg.is_set(Control::INIT),
+        };
+
+        let mut iter_count = 0u16;
+        // If WNTZ_MODE is set and first is set, then enable winternitz
+        if params.wntz_mode && params.init {
+            // Extract W value
+            let w_value = params.wntz_w;
+            // Exract N mode
+            // Initialize winternitz iteration count
+            let result = match w_value {
+                1 | 2 | 4 | 8 => {
+                    iter_count = (1 << w_value) - 1;
+                    Ok(())
+                }
+                _ => Err(()),
+            };
+            if result.is_ok() {
+                let mut block = [0u8; 64];
+                block.clone_from(self.block.data());
+                block.to_big_endian();
+                let coeff = block[22] as u16;
+
+                let mut mode = Sha256Mode::Sha256;
+                let modebits = self.control.reg.read(Control::MODE);
+
+                match modebits {
+                    0 => {
+                        mode = Sha256Mode::Sha224;
+                    }
+                    1 => {
+                        mode = Sha256Mode::Sha256;
+                    }
+                    _ => Err(BusError::StoreAccessFault)?,
+                }
+
+                for j in coeff..iter_count {
+  
+                    // Update the SHA256 engine with a new block
+                    if j == coeff {
+                        self.sha256.reset(mode);
+                        self.sha256.update(self.block.data());
+                    } else {
+
+                            
+                        block[22] = j as u8;
+
+                        let hash_len = self.sha256.hash_len();
+
+                        let mut digest = [0u8; SHA256_HASH_SIZE];
+                        self.sha256.hash(&mut digest);
+                        digest.to_big_endian();
+                        
+
+
+                        block[23..23 + hash_len].copy_from_slice(&digest[..hash_len]);
+
+                        
+                        block.to_little_endian();
+                        self.sha256.reset(mode);
+                        self.sha256.update(&block);
+                        block.to_big_endian();
+                    }
+
+                }
+                // Schedule a future call to poll() complete the operation.
+                self.op_complete_action = Some(self.timer.schedule_poll_in(INIT_TICKS));
+            }
+        } else {
+            let mut block = [0;64];
+             block.clone_from(self.block.data());
+            self.hash_block(&block)?;
+        } 
+        
 
         if self.control.reg.is_set(Control::ZEROIZE) {
             self.zeroize();
