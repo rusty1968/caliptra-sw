@@ -245,6 +245,10 @@ impl HashSha256 {
   
                     // Update the SHA256 engine with a new block
                     if j == coeff {
+                        // Reset the Ready and Valid status bits
+                        self.status
+                            .reg
+                            .modify(Status::READY::CLEAR + Status::VALID::CLEAR);
                         self.sha256.reset(mode);
                         self.sha256.update(self.block.data());
                     } else {
