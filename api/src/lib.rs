@@ -5,6 +5,7 @@
 mod capabilities;
 mod checksum;
 pub mod mailbox;
+pub mod messages;
 
 pub use caliptra_error as error;
 pub use capabilities::Capabilities;
