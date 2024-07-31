@@ -37,6 +37,7 @@ pub enum MailboxError {
     MailboxTimeout,
 }
 
+// SoC to caliptra mailbox requester.
 pub struct SocToCaliptra<'a> {
     mbox : mbox::RegisterBlock<RealMmioMut<'a>>,
     soc_ifc : soc_ifc::RegisterBlock<RealMmioMut<'a>>
