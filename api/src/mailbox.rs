@@ -38,21 +38,37 @@ pub enum MailboxError {
 }
 
 // SoC to caliptra mailbox requester.
-pub struct SocToCaliptra<'a> {
-    mbox : mbox::RegisterBlock<RealMmioMut<'a>>,
-    soc_ifc : soc_ifc::RegisterBlock<RealMmioMut<'a>>
+pub struct SocToCaliptra {
+    mbox_addr : u32,
+    soc_ifc_addr  : u32,
 }
 
-impl<'a> SocToCaliptra<'a> {
-    pub fn new(mbox : mbox::RegisterBlock<RealMmioMut<'a>>, soc_ifc : soc_ifc::RegisterBlock<RealMmioMut<'a>>) -> Self {
+impl<'a> SocToCaliptra {
+    pub fn new(mbox_addr: u32, soc_ifc_addr : u32) -> Self {
         Self {
-            mbox,
-            soc_ifc
+            mbox_addr,
+            soc_ifc_addr,
         }
     }
+
+     /// Return a register block that can be used to read and
+    /// write this peripheral's registers.
+    #[inline(always)]
+    pub  fn soc_ifc(&mut self) -> caliptra_registers::soc_ifc::RegisterBlock<ureg::RealMmioMut> {
+        unsafe { caliptra_registers::soc_ifc::RegisterBlock::new(self.soc_ifc_addr as *mut u32) }
+    }
+   
+     /// Return a register block that can be used to read and
+    /// write this peripheral's registers.
+    #[inline(always)]
+    pub  fn mbox(&mut self) -> caliptra_registers::mbox::RegisterBlock<ureg::RealMmioMut> {
+        unsafe { caliptra_registers::mbox::RegisterBlock::new(self.mbox_addr as *mut u32) }
+    }
+
+
 }
 
-impl SocToCaliptra<'_> {
+impl SocToCaliptra {
     pub fn execute_req<R: crate::messages::Request>(
         &mut self,
         mut req: R,
@@ -90,21 +106,21 @@ impl SocToCaliptra<'_> {
         buf: &[u8],
     ) -> core::result::Result<(), MailboxError> {
         // Read a 0 to get the lock
-        if self.mbox.lock().read().lock() {
+        if self.mbox().lock().read().lock() {
             return Err(MailboxError::UnableToLockMailbox);
         }
 
         // Mailbox lock value should read 1 now
         // If not, the reads are likely being blocked by the PAUSER check or some other issue
-        if !(self.mbox.lock().read().lock()) {
+        if !(self.mbox().lock().read().lock()) {
             return Err(MailboxError::UnableToReadMailbox);
         }
 
-        self.mbox.cmd().write(|_| cmd);
-        mbox_write_fifo(&self.mbox, buf)?;
+        self.mbox().cmd().write(|_| cmd);
+        mbox_write_fifo(&self.mbox(), buf)?;
 
         // Ask the microcontroller to execute this command
-        self.mbox.execute().write(|w| w.execute(true));
+        self.mbox().execute().write(|w| w.execute(true));
 
         Ok(())
     }
@@ -117,36 +133,36 @@ impl SocToCaliptra<'_> {
     ) -> core::result::Result<(), MailboxError> {
         // Wait for the microcontroller to finish executing
         let mut timeout_cycles = 40000000; // 100ms @400MHz
-        while self.mbox.status().read().status().cmd_busy() {
+        while self.mbox().status().read().status().cmd_busy() {
             if timeout_cycles <= 0 {
                 return Err(MailboxError::MailboxTimeout);
             }
             delay_one_cycle();
             timeout_cycles -= 1;
         }
-        let status = self.mbox.status().read().status();
+        let status = self.mbox().status().read().status();
         if status.cmd_failure() {
-            self.mbox.execute().write(|w| w.execute(false));
+            self.mbox().execute().write(|w| w.execute(false));
             return Err(MailboxError::MailboxCmdFailed(
-                if self.soc_ifc.cptra_fw_error_fatal().read() != 0 {
-                    self.soc_ifc.cptra_fw_error_fatal().read()
+                if self.soc_ifc().cptra_fw_error_fatal().read() != 0 {
+                    self.soc_ifc().cptra_fw_error_fatal().read()
                 } else {
-                    self.soc_ifc.cptra_fw_error_non_fatal().read()
+                    self.soc_ifc().cptra_fw_error_non_fatal().read()
                 },
             ));
         }
         if status.cmd_complete() {
-            self.mbox.execute().write(|w| w.execute(false));
+            self.mbox().execute().write(|w| w.execute(false));
             return Ok(());
         }
         if !status.data_ready() {
             return Err(MailboxError::UnknownCommandStatus(status as u32));
         }
 
-        let dlen = self.mbox.dlen().read();
-        mbox_read_fifo(&self.mbox, &mut buf[..dlen as usize]);
+        let dlen = self.mbox().dlen().read();
+        mbox_read_fifo(&self.mbox(), &mut buf[..dlen as usize]);
 
-        self.mbox.execute().write(|w| w.execute(false));
+        self.mbox().execute().write(|w| w.execute(false));
 
         Ok(())
     }
@@ -223,3 +239,18 @@ pub fn mbox_write_fifo(
     }
     Ok(())
 }
+
+
+
+mod tests {
+    use super::*;
+    /// A register block that can be used to manipulate the soc_ifc peripheral
+    /// over the simulated SoC->Caliptra APB bus.
+    #[test]
+    fn soc_ifc()  {
+        
+    }
+    
+}
+
+
