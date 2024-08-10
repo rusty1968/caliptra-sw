@@ -218,6 +218,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "caliptra-api-types"
+version = "0.1.0"
+
+[[package]]
 name = "caliptra-auth-man-gen"
 version = "0.1.0"
 dependencies = [
@@ -395,6 +399,7 @@ dependencies = [
 name = "caliptra-emu"
 version = "0.1.0"
 dependencies = [
+ "caliptra-api-types",
  "caliptra-emu-bus",
  "caliptra-emu-cpu",
  "caliptra-emu-periph",
@@ -459,6 +464,7 @@ dependencies = [
  "aes",
  "arrayref",
  "bitfield",
+ "caliptra-api-types",
  "caliptra-emu-bus",
  "caliptra-emu-cpu",
  "caliptra-emu-crypto",
@@ -524,6 +530,7 @@ dependencies = [
  "bit-vec",
  "bitfield",
  "caliptra-api",
+ "caliptra-api-types",
  "caliptra-builder",
  "caliptra-coverage",
  "caliptra-emu-bus",
@@ -569,6 +576,7 @@ dependencies = [
 name = "caliptra-hw-model-types"
 version = "0.1.0"
 dependencies = [
+ "caliptra-api-types",
  "rand",
 ]
 
@@ -854,6 +862,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "asn1",
+ "caliptra-api-types",
  "caliptra-builder",
  "caliptra-coverage",
  "caliptra-drivers",
