@@ -5,7 +5,9 @@ use caliptra_builder::{
     ImageOptions,
 };
 use caliptra_error::CaliptraError;
-use caliptra_hw_model::{BootParams, DeviceLifecycle, Fuses, HwModel, InitParams, SecurityState};
+use caliptra_hw_model::{
+    BootParams, DeviceLifecycle, Fuses, HwModel, InitParams, SecurityState, SocManager,
+};
 use caliptra_registers::mbox::enums::MboxStatusE;
 use dpe::DPE_PROFILE;
 use openssl::sha::sha384;

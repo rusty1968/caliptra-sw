@@ -4,7 +4,7 @@ use std::mem;
 
 use caliptra_builder::{firmware, ImageOptions};
 use caliptra_hw_model::{BootParams, Fuses, HwModel, InitParams, SecurityState};
-use caliptra_hw_model::{DefaultHwModel, ModelError};
+use caliptra_hw_model::{DefaultHwModel, ModelError, SocManager};
 use caliptra_image_types::ImageBundle;
 
 pub fn build_hw_model_and_image_bundle(

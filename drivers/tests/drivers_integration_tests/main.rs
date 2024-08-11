@@ -8,7 +8,7 @@ use caliptra_drivers::{Array4x12, Array4xN, Ecc384PubKey};
 use caliptra_drivers_test_bin::DoeTestResults;
 use caliptra_hw_model::{
     BootParams, DefaultHwModel, DeviceLifecycle, HwModel, InitParams, ModelError, SecurityState,
-    TrngMode,
+    SocManager, TrngMode,
 };
 use caliptra_hw_model_types::EtrngResponse;
 use caliptra_registers::mbox::enums::MboxStatusE;

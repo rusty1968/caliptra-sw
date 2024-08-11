@@ -8,7 +8,7 @@ use caliptra_common::{
     mailbox_api::{CommandId, MailboxReq, MailboxReqHeader, StashMeasurementReq},
     RomBootStatus,
 };
-use caliptra_hw_model::{BootParams, Fuses, HwModel, InitParams, SecurityState};
+use caliptra_hw_model::{BootParams, Fuses, HwModel, InitParams, SecurityState, SocManager};
 use caliptra_runtime::RtBootStatus;
 use sha2::{Digest, Sha384};
 use zerocopy::AsBytes;

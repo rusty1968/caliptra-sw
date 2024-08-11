@@ -5,7 +5,7 @@ use caliptra_builder::{version, ImageOptions};
 use caliptra_common::mailbox_api::{
     CommandId, FipsVersionResp, MailboxReqHeader, MailboxRespHeader,
 };
-use caliptra_hw_model::HwModel;
+use caliptra_hw_model::{HwModel, SocManager};
 use caliptra_runtime::FipsVersionCmd;
 use zerocopy::{AsBytes, FromBytes};
 

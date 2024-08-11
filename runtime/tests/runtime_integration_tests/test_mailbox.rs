@@ -1,7 +1,7 @@
 // Licensed under the Apache-2.0 license
 
 use caliptra_common::mailbox_api::{CommandId, MailboxReqHeader};
-use caliptra_hw_model::HwModel;
+use caliptra_hw_model::{HwModel, SocManager};
 use zerocopy::AsBytes;
 
 use crate::common::{assert_error, run_rt_test};

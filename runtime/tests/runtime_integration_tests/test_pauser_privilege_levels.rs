@@ -10,7 +10,7 @@ use caliptra_common::mailbox_api::{
     PopulateIdevCertReq, StashMeasurementReq,
 };
 use caliptra_error::CaliptraError;
-use caliptra_hw_model::{BootParams, Fuses, HwModel, InitParams, SecurityState};
+use caliptra_hw_model::{BootParams, Fuses, HwModel, InitParams, SecurityState, SocManager};
 use caliptra_image_crypto::OsslCrypto as Crypto;
 use caliptra_image_elf::ElfExecutable;
 use caliptra_image_gen::{ImageGenerator, ImageGeneratorConfig};

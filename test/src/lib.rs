@@ -4,7 +4,7 @@ use caliptra_builder::{
     firmware::{APP_WITH_UART, FMC_WITH_UART},
     FwId, ImageOptions,
 };
-use caliptra_hw_model::{BootParams, DefaultHwModel, HwModel, InitParams};
+use caliptra_hw_model::{BootParams, DefaultHwModel, HwModel, InitParams, SocManager};
 
 pub mod crypto;
 pub mod derive;

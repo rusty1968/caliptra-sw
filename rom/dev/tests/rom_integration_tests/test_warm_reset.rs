@@ -7,7 +7,7 @@ use caliptra_common::mailbox_api::CommandId;
 use caliptra_common::RomBootStatus::*;
 use caliptra_drivers::CaliptraError;
 use caliptra_hw_model::DeviceLifecycle;
-use caliptra_hw_model::{BootParams, Fuses, HwModel, InitParams, SecurityState};
+use caliptra_hw_model::{BootParams, Fuses, HwModel, InitParams, SecurityState, SocManager};
 use caliptra_test::swap_word_bytes_inplace;
 use openssl::sha::sha384;
 use zerocopy::AsBytes;

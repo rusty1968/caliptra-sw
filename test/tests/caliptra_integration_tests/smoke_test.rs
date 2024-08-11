@@ -8,7 +8,7 @@ use caliptra_common::mailbox_api::{
 };
 use caliptra_common::RomBootStatus;
 use caliptra_drivers::CaliptraError;
-use caliptra_hw_model::{BootParams, HwModel, InitParams, SecurityState};
+use caliptra_hw_model::{BootParams, HwModel, InitParams, SecurityState, SocManager};
 use caliptra_hw_model_types::{RandomEtrngResponses, RandomNibbles};
 use caliptra_test::derive::{PcrRtCurrentInput, RtAliasKey};
 use caliptra_test::{derive, redact_cert, run_test, RedactOpts, UnwrapSingle};

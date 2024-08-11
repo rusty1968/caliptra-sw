@@ -3,7 +3,7 @@
 use caliptra_builder::{firmware, ImageOptions};
 use caliptra_common::mailbox_api::{CommandId, GetLdevCertResp, MailboxReqHeader};
 use caliptra_drivers::{IdevidCertAttr, MfgFlags, X509KeyIdAlgo};
-use caliptra_hw_model::{DefaultHwModel, Fuses, HwModel};
+use caliptra_hw_model::{DefaultHwModel, Fuses, HwModel, SocManager};
 use caliptra_image_types::ImageBundle;
 use openssl::pkey::{PKey, Public};
 use openssl::x509::X509;

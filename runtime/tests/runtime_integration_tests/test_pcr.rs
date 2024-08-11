@@ -7,7 +7,7 @@ use caliptra_common::mailbox_api::{
 };
 use caliptra_drivers::PcrId;
 use caliptra_error::CaliptraError;
-use caliptra_hw_model::{DefaultHwModel, HwModel, ModelError};
+use caliptra_hw_model::{DefaultHwModel, HwModel, ModelError, SocManager};
 use openssl::{
     bn::BigNum,
     ecdsa::EcdsaSig,

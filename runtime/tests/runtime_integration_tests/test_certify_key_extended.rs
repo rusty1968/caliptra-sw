@@ -4,7 +4,7 @@ use caliptra_common::mailbox_api::{
     AddSubjectAltNameReq, CertifyKeyExtendedFlags, CertifyKeyExtendedReq, CertifyKeyExtendedResp,
     CommandId, MailboxReq, MailboxReqHeader,
 };
-use caliptra_hw_model::HwModel;
+use caliptra_hw_model::{HwModel, SocManager};
 use caliptra_runtime::{AddSubjectAltNameCmd, RtBootStatus};
 use dpe::{
     commands::{CertifyKeyCmd, CertifyKeyFlags},

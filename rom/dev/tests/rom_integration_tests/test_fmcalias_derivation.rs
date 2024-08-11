@@ -17,7 +17,9 @@ use caliptra_drivers::memory_layout::*;
 use caliptra_drivers::pcr_log::MeasurementLogEntry;
 use caliptra_drivers::{ColdResetEntry4, PcrId, RomVerifyConfig};
 use caliptra_error::CaliptraError;
-use caliptra_hw_model::{BootParams, Fuses, HwModel, InitParams, ModelError, SecurityState};
+use caliptra_hw_model::{
+    BootParams, Fuses, HwModel, InitParams, ModelError, SecurityState, SocManager,
+};
 use caliptra_image_crypto::OsslCrypto as Crypto;
 use caliptra_image_fake_keys::{OWNER_CONFIG, VENDOR_CONFIG_KEY_1};
 use caliptra_image_gen::ImageGenerator;

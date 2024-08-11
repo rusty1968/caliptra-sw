@@ -11,7 +11,7 @@ use caliptra_common::mailbox_api::{
 };
 use caliptra_drivers::PcrResetCounter;
 use caliptra_error::CaliptraError;
-use caliptra_hw_model::{DefaultHwModel, HwModel};
+use caliptra_hw_model::{DefaultHwModel, HwModel, SocManager};
 use caliptra_runtime::{ContextState, RtBootStatus, PL0_DPE_ACTIVE_CONTEXT_THRESHOLD};
 use dpe::{
     context::{Context, ContextHandle, ContextType},

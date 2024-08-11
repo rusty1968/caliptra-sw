@@ -6,7 +6,9 @@ use caliptra_builder::{
     ImageOptions,
 };
 use caliptra_common::mailbox_api::CommandId;
-use caliptra_hw_model::{mbox_write_fifo, BootParams, HwModel, InitParams, SecurityState};
+use caliptra_hw_model::{
+    mbox_write_fifo, BootParams, HwModel, InitParams, SecurityState, SocManager,
+};
 use caliptra_test::swap_word_bytes_inplace;
 use openssl::sha::sha384;
 use zerocopy::AsBytes;

@@ -4,7 +4,6 @@ use api::calc_checksum;
 use api::mailbox::{MailboxReqHeader, MailboxRespHeader, Response};
 use caliptra_api as api;
 use caliptra_api_types as api_types;
-use caliptra_emu_bus::Bus;
 use std::mem;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -20,6 +19,7 @@ use caliptra_hw_model_types::{
 };
 use zerocopy::{AsBytes, FromBytes, LayoutVerified, Unalign};
 
+use caliptra_emu_bus::Bus;
 use caliptra_registers::mbox;
 use caliptra_registers::mbox::enums::{MboxFsmE, MboxStatusE};
 use caliptra_registers::soc_ifc::regs::{
@@ -464,14 +464,135 @@ const FW_LOAD_CMD_OPCODE: u32 = 0x4657_4C44;
 /// Stash Measurement Command Opcode.
 const STASH_MEASUREMENT_CMD_OPCODE: u32 = 0x4D45_4153;
 
-// Represents a emulator or simulation of the caliptra hardware, to be called
-// from tests. Typically, test cases should use [`crate::new()`] to create a model
-// based on the cargo features (and any model-specific environment variables).
-pub trait HwModel {
+pub trait SocManager {
     type TBus<'a>: Bus
     where
         Self: 'a;
 
+    const SOC_IFC_ADDR: u32;
+    const SOC_MBOX_ADDR: u32;
+    const SOC_SHA512_ACC_ADDR: u32;
+    const SOC_IFC_TRNG_ADDR: u32;
+
+    /// The APB bus from the SoC to Caliptra
+    ///
+    /// WARNING: Reading or writing to this bus may involve the Caliptra
+    /// microcontroller executing a few instructions
+    fn apb_bus(&mut self) -> Self::TBus<'_>;
+
+    /// Initializes the fuse values and locks them in until the next reset. This
+    /// function can only be called during early boot, shortly after the model
+    /// is created with `new_unbooted()`.
+    ///
+    /// # Panics
+    ///
+    /// If the cptra_fuse_wr_done has already been written, or the
+    /// hardware prevents cptra_fuse_wr_done from being set.
+    fn init_fuses(&mut self, fuses: &Fuses) {
+        if !self.soc_ifc().cptra_reset_reason().read().warm_reset() {
+            assert!(
+                !self.soc_ifc().cptra_fuse_wr_done().read().done(),
+                "Fuses are already locked in place (according to cptra_fuse_wr_done)"
+            );
+        }
+        //        println!("Initializing fuses: {:#x?}", fuses);
+
+        self.soc_ifc().fuse_uds_seed().write(&fuses.uds_seed);
+        self.soc_ifc()
+            .fuse_field_entropy()
+            .write(&fuses.field_entropy);
+        self.soc_ifc()
+            .fuse_key_manifest_pk_hash()
+            .write(&fuses.key_manifest_pk_hash);
+        self.soc_ifc()
+            .fuse_key_manifest_pk_hash_mask()
+            .write(|w| w.mask(fuses.key_manifest_pk_hash_mask.into()));
+        self.soc_ifc()
+            .fuse_owner_pk_hash()
+            .write(&fuses.owner_pk_hash);
+        self.soc_ifc()
+            .fuse_fmc_key_manifest_svn()
+            .write(|_| fuses.fmc_key_manifest_svn);
+        self.soc_ifc().fuse_runtime_svn().write(&fuses.runtime_svn);
+        self.soc_ifc()
+            .fuse_anti_rollback_disable()
+            .write(|w| w.dis(fuses.anti_rollback_disable));
+        self.soc_ifc()
+            .fuse_idevid_cert_attr()
+            .write(&fuses.idevid_cert_attr);
+        self.soc_ifc()
+            .fuse_idevid_manuf_hsm_id()
+            .write(&fuses.idevid_manuf_hsm_id);
+        self.soc_ifc()
+            .fuse_life_cycle()
+            .write(|w| w.life_cycle(fuses.life_cycle.into()));
+        self.soc_ifc()
+            .fuse_lms_verify()
+            .write(|w| w.lms_verify(fuses.lms_verify));
+        self.soc_ifc()
+            .fuse_lms_revocation()
+            .write(|_| fuses.fuse_lms_revocation);
+        self.soc_ifc()
+            .fuse_soc_stepping_id()
+            .write(|w| w.soc_stepping_id(fuses.soc_stepping_id.into()));
+
+        self.soc_ifc().cptra_fuse_wr_done().write(|w| w.done(true));
+        assert!(self.soc_ifc().cptra_fuse_wr_done().read().done());
+    }
+
+    /// A register block that can be used to manipulate the soc_ifc peripheral
+    /// over the simulated SoC->Caliptra APB bus.
+    fn soc_ifc(&mut self) -> caliptra_registers::soc_ifc::RegisterBlock<BusMmio<Self::TBus<'_>>> {
+        unsafe {
+            caliptra_registers::soc_ifc::RegisterBlock::new_with_mmio(
+                Self::SOC_IFC_ADDR as *mut u32,
+                BusMmio::new(self.apb_bus()),
+            )
+        }
+    }
+
+    /// A register block that can be used to manipulate the soc_ifc peripheral TRNG registers
+    /// over the simulated SoC->Caliptra APB bus.
+    fn soc_ifc_trng(
+        &mut self,
+    ) -> caliptra_registers::soc_ifc_trng::RegisterBlock<BusMmio<Self::TBus<'_>>> {
+        unsafe {
+            caliptra_registers::soc_ifc_trng::RegisterBlock::new_with_mmio(
+                Self::SOC_IFC_TRNG_ADDR as *mut u32,
+                BusMmio::new(self.apb_bus()),
+            )
+        }
+    }
+
+    /// A register block that can be used to manipulate the mbox peripheral
+    /// over the simulated SoC->Caliptra APB bus.
+    fn soc_mbox(&mut self) -> caliptra_registers::mbox::RegisterBlock<BusMmio<Self::TBus<'_>>> {
+        unsafe {
+            caliptra_registers::mbox::RegisterBlock::new_with_mmio(
+                Self::SOC_MBOX_ADDR as *mut u32,
+                BusMmio::new(self.apb_bus()),
+            )
+        }
+    }
+
+    /// A register block that can be used to manipulate the sha512_acc peripheral
+    /// over the simulated SoC->Caliptra APB bus.
+    fn soc_sha512_acc(
+        &mut self,
+    ) -> caliptra_registers::sha512_acc::RegisterBlock<BusMmio<Self::TBus<'_>>> {
+        unsafe {
+            caliptra_registers::sha512_acc::RegisterBlock::new_with_mmio(
+                Self::SOC_SHA512_ACC_ADDR as *mut u32,
+                BusMmio::new(self.apb_bus()),
+            )
+        }
+    }
+}
+
+// Represents a emulator or simulation of the caliptra hardware, to be called
+// from tests. Typically, test cases should use [`crate::new()`] to create a model
+// based on the cargo features (and any model-specific environment variables).
+pub trait HwModel: SocManager {
     /// Create a model. Most high-level tests should use [`new()`]
     /// instead.
     fn new_unbooted(params: InitParams) -> Result<Self, Box<dyn Error>>
@@ -579,12 +700,6 @@ pub trait HwModel {
         self.soc_ifc().cptra_bootfsm_go().write(|w| w.go(true));
     }
 
-    /// The APB bus from the SoC to Caliptra
-    ///
-    /// WARNING: Reading or writing to this bus may involve the Caliptra
-    /// microcontroller executing a few instructions
-    fn apb_bus(&mut self) -> Self::TBus<'_>;
-
     /// Step execution ahead one clock cycle.
     fn step(&mut self);
 
@@ -614,66 +729,6 @@ pub trait HwModel {
     /// firmware to be written to the mailbox. For RTL implementations, this
     /// should come via a caliptra_top wire rather than an APB register.
     fn ready_for_fw(&self) -> bool;
-
-    /// Initializes the fuse values and locks them in until the next reset. This
-    /// function can only be called during early boot, shortly after the model
-    /// is created with `new_unbooted()`.
-    ///
-    /// # Panics
-    ///
-    /// If the cptra_fuse_wr_done has already been written, or the
-    /// hardware prevents cptra_fuse_wr_done from being set.
-    fn init_fuses(&mut self, fuses: &Fuses) {
-        if !self.soc_ifc().cptra_reset_reason().read().warm_reset() {
-            assert!(
-                !self.soc_ifc().cptra_fuse_wr_done().read().done(),
-                "Fuses are already locked in place (according to cptra_fuse_wr_done)"
-            );
-        }
-        //        println!("Initializing fuses: {:#x?}", fuses);
-
-        self.soc_ifc().fuse_uds_seed().write(&fuses.uds_seed);
-        self.soc_ifc()
-            .fuse_field_entropy()
-            .write(&fuses.field_entropy);
-        self.soc_ifc()
-            .fuse_key_manifest_pk_hash()
-            .write(&fuses.key_manifest_pk_hash);
-        self.soc_ifc()
-            .fuse_key_manifest_pk_hash_mask()
-            .write(|w| w.mask(fuses.key_manifest_pk_hash_mask.into()));
-        self.soc_ifc()
-            .fuse_owner_pk_hash()
-            .write(&fuses.owner_pk_hash);
-        self.soc_ifc()
-            .fuse_fmc_key_manifest_svn()
-            .write(|_| fuses.fmc_key_manifest_svn);
-        self.soc_ifc().fuse_runtime_svn().write(&fuses.runtime_svn);
-        self.soc_ifc()
-            .fuse_anti_rollback_disable()
-            .write(|w| w.dis(fuses.anti_rollback_disable));
-        self.soc_ifc()
-            .fuse_idevid_cert_attr()
-            .write(&fuses.idevid_cert_attr);
-        self.soc_ifc()
-            .fuse_idevid_manuf_hsm_id()
-            .write(&fuses.idevid_manuf_hsm_id);
-        self.soc_ifc()
-            .fuse_life_cycle()
-            .write(|w| w.life_cycle(fuses.life_cycle.into()));
-        self.soc_ifc()
-            .fuse_lms_verify()
-            .write(|w| w.lms_verify(fuses.lms_verify));
-        self.soc_ifc()
-            .fuse_lms_revocation()
-            .write(|_| fuses.fuse_lms_revocation);
-        self.soc_ifc()
-            .fuse_soc_stepping_id()
-            .write(|w| w.soc_stepping_id(fuses.soc_stepping_id.into()));
-
-        self.soc_ifc().cptra_fuse_wr_done().write(|w| w.done(true));
-        assert!(self.soc_ifc().cptra_fuse_wr_done().read().done());
-    }
 
     fn step_until_exit_success(&mut self) -> std::io::Result<()> {
         self.copy_output_until_exit_success(std::io::Sink::default())
@@ -810,54 +865,6 @@ pub trait HwModel {
                     ({expected_error}), but was stuck at ({initial_error})"
                 );
             }
-        }
-    }
-
-    /// A register block that can be used to manipulate the soc_ifc peripheral
-    /// over the simulated SoC->Caliptra APB bus.
-    fn soc_ifc(&mut self) -> caliptra_registers::soc_ifc::RegisterBlock<BusMmio<Self::TBus<'_>>> {
-        unsafe {
-            caliptra_registers::soc_ifc::RegisterBlock::new_with_mmio(
-                0x3003_0000 as *mut u32,
-                BusMmio::new(self.apb_bus()),
-            )
-        }
-    }
-
-    /// A register block that can be used to manipulate the soc_ifc peripheral TRNG registers
-    /// over the simulated SoC->Caliptra APB bus.
-    fn soc_ifc_trng(
-        &mut self,
-    ) -> caliptra_registers::soc_ifc_trng::RegisterBlock<BusMmio<Self::TBus<'_>>> {
-        unsafe {
-            caliptra_registers::soc_ifc_trng::RegisterBlock::new_with_mmio(
-                0x3003_0000 as *mut u32,
-                BusMmio::new(self.apb_bus()),
-            )
-        }
-    }
-
-    /// A register block that can be used to manipulate the mbox peripheral
-    /// over the simulated SoC->Caliptra APB bus.
-    fn soc_mbox(&mut self) -> caliptra_registers::mbox::RegisterBlock<BusMmio<Self::TBus<'_>>> {
-        unsafe {
-            caliptra_registers::mbox::RegisterBlock::new_with_mmio(
-                0x3002_0000 as *mut u32,
-                BusMmio::new(self.apb_bus()),
-            )
-        }
-    }
-
-    /// A register block that can be used to manipulate the sha512_acc peripheral
-    /// over the simulated SoC->Caliptra APB bus.
-    fn soc_sha512_acc(
-        &mut self,
-    ) -> caliptra_registers::sha512_acc::RegisterBlock<BusMmio<Self::TBus<'_>>> {
-        unsafe {
-            caliptra_registers::sha512_acc::RegisterBlock::new_with_mmio(
-                0x3002_1000 as *mut u32,
-                BusMmio::new(self.apb_bus()),
-            )
         }
     }
 
@@ -1168,6 +1175,7 @@ mod tests {
     use caliptra_builder::firmware;
     use caliptra_emu_bus::Bus;
     use caliptra_emu_types::RvSize;
+    use caliptra_hw_model::SocManager;
     use caliptra_registers::{mbox::enums::MboxStatusE, soc_ifc};
     use zerocopy::{AsBytes, FromBytes};
 

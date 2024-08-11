@@ -433,6 +433,9 @@ dependencies = [
 [[package]]
 name = "caliptra-emu-types"
 version = "0.1.0"
+dependencies = [
+ "ureg",
+]
 
 [[package]]
 name = "caliptra-error"

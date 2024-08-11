@@ -1,5 +1,4 @@
 // Licensed under the Apache-2.0 license
-
 use caliptra_builder::{
     firmware::{APP_WITH_UART, APP_WITH_UART_FPGA, FMC_WITH_UART},
     FwId, ImageOptions,
@@ -9,7 +8,7 @@ use caliptra_common::mailbox_api::{
     MailboxReqHeader,
 };
 use caliptra_error::CaliptraError;
-use caliptra_hw_model::{BootParams, DefaultHwModel, HwModel, InitParams, ModelError};
+use caliptra_hw_model::{BootParams, DefaultHwModel, HwModel, InitParams, ModelError, SocManager};
 use dpe::{
     commands::{Command, CommandHdr},
     response::{

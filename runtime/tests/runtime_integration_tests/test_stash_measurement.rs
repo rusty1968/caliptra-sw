@@ -7,7 +7,7 @@ use caliptra_builder::{
 use caliptra_common::mailbox_api::{
     CommandId, MailboxReq, MailboxReqHeader, StashMeasurementReq, StashMeasurementResp,
 };
-use caliptra_hw_model::HwModel;
+use caliptra_hw_model::{HwModel, SocManager};
 use caliptra_runtime::RtBootStatus;
 use sha2::{Digest, Sha384};
 use zerocopy::{AsBytes, LayoutVerified};

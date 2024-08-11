@@ -4,7 +4,7 @@ use crate::common::{assert_error, run_rt_test};
 use caliptra_common::mailbox_api::{
     CommandId, LmsVerifyReq, MailboxReq, MailboxReqHeader, MailboxRespHeader,
 };
-use caliptra_hw_model::{HwModel, ModelError, ShaAccMode};
+use caliptra_hw_model::{HwModel, ModelError, ShaAccMode, SocManager};
 use caliptra_lms_types::{LmotsAlgorithmType, LmsAlgorithmType, LmsPublicKey, LmsSignature};
 use caliptra_runtime::RtBootStatus;
 use zerocopy::{AsBytes, FromBytes, LayoutVerified};

@@ -14,7 +14,8 @@ use caliptra_drivers::MfgFlags;
 use caliptra_drivers::{Array4x12, IdevidCertAttr};
 use caliptra_error::CaliptraError;
 use caliptra_hw_model::{
-    BootParams, DeviceLifecycle, Fuses, HwModel, InitParams, ModelError, SecurityState, U4,
+    BootParams, DeviceLifecycle, Fuses, HwModel, InitParams, ModelError, SecurityState, SocManager,
+    U4,
 };
 use caliptra_image_crypto::OsslCrypto as Crypto;
 use caliptra_image_elf::ElfExecutable;

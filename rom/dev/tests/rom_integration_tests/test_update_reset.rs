@@ -15,7 +15,7 @@ use caliptra_common::mailbox_api::CommandId;
 use caliptra_common::RomBootStatus::*;
 use caliptra_drivers::WarmResetEntry4;
 use caliptra_error::CaliptraError;
-use caliptra_hw_model::{BootParams, HwModel, InitParams};
+use caliptra_hw_model::{BootParams, HwModel, InitParams, SocManager};
 use caliptra_image_fake_keys::VENDOR_CONFIG_KEY_0;
 use caliptra_image_gen::ImageGeneratorVendorConfig;
 use zerocopy::{AsBytes, FromBytes};

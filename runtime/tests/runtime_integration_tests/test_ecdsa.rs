@@ -4,7 +4,8 @@ use crate::common::{assert_error, run_rt_test};
 use caliptra_common::mailbox_api::{
     CommandId, EcdsaVerifyReq, MailboxReq, MailboxReqHeader, MailboxRespHeader,
 };
-use caliptra_hw_model::{HwModel, ShaAccMode};
+use caliptra_hw_model::{HwModel, ShaAccMode, SocManager};
+
 use caliptra_runtime::RtBootStatus;
 use zerocopy::{AsBytes, FromBytes, LayoutVerified};
 

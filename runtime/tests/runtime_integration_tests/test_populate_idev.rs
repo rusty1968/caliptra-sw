@@ -3,7 +3,7 @@
 use crate::common::{execute_dpe_cmd, generate_test_x509_cert, run_rt_test, DpeResult};
 use caliptra_common::mailbox_api::{CommandId, MailboxReq, MailboxReqHeader, PopulateIdevCertReq};
 use caliptra_error::CaliptraError;
-use caliptra_hw_model::{DefaultHwModel, HwModel};
+use caliptra_hw_model::{DefaultHwModel, HwModel, SocManager};
 use caliptra_runtime::RtBootStatus;
 use dpe::{
     commands::{Command, GetCertificateChainCmd},
