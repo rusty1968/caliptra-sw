@@ -23,6 +23,8 @@ pub trait SocManager {
     const SOC_SHA512_ACC_ADDR: u32;
     const SOC_IFC_TRNG_ADDR: u32;
 
+    const MAX_WAIT_CYCLES: u32;
+
     /// The APB bus from the SoC to Caliptra
     ///
     /// WARNING: Reading or writing to this bus may involve the Caliptra

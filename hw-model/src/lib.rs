@@ -544,12 +544,11 @@ pub trait HwModel: SocManager {
         self.step();
 
         if let Some(fw_image) = boot_params.fw_image {
-            const MAX_WAIT_CYCLES: u32 = 20_000_000;
             let mut cycles = 0;
             while !self.ready_for_fw() {
                 self.step();
                 cycles += 1;
-                if cycles > MAX_WAIT_CYCLES {
+                if cycles > Self::MAX_WAIT_CYCLES {
                     return Err(ModelError::ReadyForFirmwareTimeout { cycles }.into());
                 }
             }
