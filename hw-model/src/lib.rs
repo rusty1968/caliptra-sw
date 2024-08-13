@@ -2,7 +2,7 @@
 
 use api::calc_checksum;
 use api::mailbox::{MailboxReqHeader, MailboxRespHeader, Response};
-use caliptra_api as api;
+use caliptra_api::{self as api, CaliptraApiError};
 use caliptra_api_types as api_types;
 use std::mem;
 use std::path::PathBuf;
@@ -301,6 +301,7 @@ pub enum ModelError {
     },
     MailboxRespInvalidFipsStatus(u32),
     MailboxTimeout,
+    CaliptraApiError(CaliptraApiError),
 }
 impl Error for ModelError {}
 impl Display for ModelError {
@@ -365,6 +366,13 @@ impl Display for ModelError {
             }
             ModelError::MailboxTimeout => {
                 write!(f, "Mailbox timed out in busy state")
+            }
+            ModelError::CaliptraApiError(e) => {
+                match e {
+                    CaliptraApiError::UnableToReadMailbox => write!(f, "Unable to read mailbox regs"),
+                    CaliptraApiError::UnableToLockMailbox => write!(f, "Unable to lock mailbox"),
+                    CaliptraApiError::BufferTooLargeForMailbox => write!(f, "Buffer too large for mailbox"),
+                }
             }
         }
     }
@@ -817,42 +825,10 @@ pub trait HwModel: SocManager {
         cmd: u32,
         buf: &[u8],
     ) -> std::result::Result<Option<Vec<u8>>, ModelError> {
-        self.start_mailbox_execute(cmd, buf)?;
+        self.start_mailbox_execute(cmd, buf).map_err(|e| ModelError::CaliptraApiError(e))?;
         self.finish_mailbox_execute()
     }
 
-    /// Send a command to the mailbox but don't wait for the response
-    fn start_mailbox_execute(
-        &mut self,
-        cmd: u32,
-        buf: &[u8],
-    ) -> std::result::Result<(), ModelError> {
-        // Read a 0 to get the lock
-        if self.soc_mbox().lock().read().lock() {
-            return Err(ModelError::UnableToLockMailbox);
-        }
-
-        // Mailbox lock value should read 1 now
-        // If not, the reads are likely being blocked by the PAUSER check or some other issue
-        if !(self.soc_mbox().lock().read().lock()) {
-            return Err(ModelError::UnableToReadMailbox);
-        }
-
-        writeln!(
-            self.output().logger(),
-            "<<< Executing mbox cmd 0x{cmd:08x} ({} bytes) from SoC",
-            buf.len(),
-        )
-        .unwrap();
-
-        self.soc_mbox().cmd().write(|_| cmd);
-        mbox_write_fifo(&self.soc_mbox(), buf)?;
-
-        // Ask the microcontroller to execute this command
-        self.soc_mbox().execute().write(|w| w.execute(true));
-
-        Ok(())
-    }
 
     /// Wait for the response to a previous call to `start_mailbox_execute()`.
     fn finish_mailbox_execute(&mut self) -> std::result::Result<Option<Vec<u8>>, ModelError> {

@@ -217,6 +217,7 @@ dependencies = [
  "caliptra-emu-types",
  "caliptra-error",
  "caliptra-registers",
+ "ureg",
  "zerocopy",
 ]
 

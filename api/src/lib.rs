@@ -13,6 +13,8 @@ pub use caliptra_error as error;
 pub use capabilities::Capabilities;
 pub use checksum::{calc_checksum, verify_checksum};
 
+use crate::mailbox::mbox_write_fifo;
+
 pub trait SocManager {
     type TBus<'a>: Bus
     where
@@ -138,4 +140,39 @@ pub trait SocManager {
             )
         }
     }
+
+
+    /// Send a command to the mailbox but don't wait for the response
+    fn start_mailbox_execute(
+        &mut self,
+        cmd: u32,
+        buf: &[u8],
+    ) -> core::result::Result<(), CaliptraApiError> {
+        // Read a 0 to get the lock
+        if self.soc_mbox().lock().read().lock() {
+            return Err(CaliptraApiError::UnableToLockMailbox);
+        }
+
+        // Mailbox lock value should read 1 now
+        // If not, the reads are likely being blocked by the PAUSER check or some other issue
+        if !(self.soc_mbox().lock().read().lock()) {
+            return Err(CaliptraApiError::UnableToReadMailbox);
+        }
+
+
+        self.soc_mbox().cmd().write(|_| cmd);
+        mbox_write_fifo(&self.soc_mbox(), buf)?;
+
+        // Ask the microcontroller to execute this command
+        self.soc_mbox().execute().write(|w| w.execute(true));
+
+        Ok(())
+    }
+
+}
+#[derive(Debug, Eq, PartialEq)]
+pub enum CaliptraApiError {
+    UnableToLockMailbox,
+    UnableToReadMailbox,
+    BufferTooLargeForMailbox,
 }
