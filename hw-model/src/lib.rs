@@ -2,8 +2,10 @@
 
 use api::calc_checksum;
 use api::mailbox::{MailboxReqHeader, MailboxRespHeader, Response};
+use caliptra_api::mbox_write_fifo;
 use caliptra_api::{self as api, CaliptraApiError};
 use caliptra_api_types as api_types;
+use sha2::digest::typenum::Mod;
 use std::mem;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -41,7 +43,7 @@ mod model_fpga_realtime;
 mod output;
 mod rv32_builder;
 
-pub use api::SocManager;
+pub use api::{MboxBuffer, SocManager};
 pub use api_types::{DeviceLifecycle, Fuses, SecurityState, U4};
 pub use caliptra_emu_bus::BusMmio;
 use output::ExitStatus;
@@ -367,13 +369,13 @@ impl Display for ModelError {
             ModelError::MailboxTimeout => {
                 write!(f, "Mailbox timed out in busy state")
             }
-            ModelError::CaliptraApiError(e) => {
-                match e {
-                    CaliptraApiError::UnableToReadMailbox => write!(f, "Unable to read mailbox regs"),
-                    CaliptraApiError::UnableToLockMailbox => write!(f, "Unable to lock mailbox"),
-                    CaliptraApiError::BufferTooLargeForMailbox => write!(f, "Buffer too large for mailbox"),
+            ModelError::CaliptraApiError(e) => match e {
+                CaliptraApiError::UnableToReadMailbox => write!(f, "Unable to read mailbox regs"),
+                CaliptraApiError::UnableToLockMailbox => write!(f, "Unable to lock mailbox"),
+                CaliptraApiError::BufferTooLargeForMailbox => {
+                    write!(f, "Buffer too large for mailbox")
                 }
-            }
+            },
         }
     }
 }
@@ -403,7 +405,7 @@ impl<'a, Model: HwModel> MailboxRecvTxn<'a, Model> {
                 actual: mbox_fsm_ps as u32,
             });
         }
-        mbox_write_fifo(&mbox, data)?;
+        mbox_write_fifo(&mbox, data).map_err(|e| ModelError::CaliptraApiError(e))?;
         drop(mbox);
         self.complete(MboxStatusE::DataReady);
         Ok(())
@@ -436,35 +438,6 @@ fn mbox_read_fifo(mbox: mbox::RegisterBlock<impl MmioMut>) -> Vec<u8> {
     result
 }
 
-pub fn mbox_write_fifo(
-    mbox: &mbox::RegisterBlock<impl MmioMut>,
-    buf: &[u8],
-) -> Result<(), ModelError> {
-    const MAILBOX_SIZE: u32 = 128 * 1024;
-
-    let Ok(input_len) = u32::try_from(buf.len()) else {
-        return Err(ModelError::BufferTooLargeForMailbox);
-    };
-    if input_len > MAILBOX_SIZE {
-        return Err(ModelError::BufferTooLargeForMailbox);
-    }
-    mbox.dlen().write(|_| input_len);
-
-    let mut remaining = buf;
-    while remaining.len() >= 4 {
-        // Panic is impossible because the subslice is always 4 bytes
-        let word = u32::from_le_bytes(remaining[..4].try_into().unwrap());
-        mbox.datain().write(|_| word);
-        remaining = &remaining[4..];
-    }
-    if !remaining.is_empty() {
-        let mut word_bytes = [0u8; 4];
-        word_bytes[..remaining.len()].copy_from_slice(remaining);
-        let word = u32::from_le_bytes(word_bytes);
-        mbox.datain().write(|_| word);
-    }
-    Ok(())
-}
 
 /// Firmware Load Command Opcode
 const FW_LOAD_CMD_OPCODE: u32 = 0x4657_4C44;
@@ -782,7 +755,7 @@ pub trait HwModel: SocManager {
         header.chksum = api::calc_checksum(R::ID.into(), payload_bytes);
         header_bytes.copy_from_slice(header.as_bytes());
 
-        let Some(response_bytes) = self.mailbox_execute(R::ID.into(), req.as_bytes())? else {
+        let Some(response_bytes) = self.mailbox_execute(R::ID.into(), req.as_bytes(), &mut MboxBuffer::default())? else {
             return Err(ModelError::MailboxNoResponseData);
         };
         if response_bytes.len() < R::Resp::MIN_SIZE
@@ -824,11 +797,12 @@ pub trait HwModel: SocManager {
         &mut self,
         cmd: u32,
         buf: &[u8],
+        _resp_data: &mut MboxBuffer 
     ) -> std::result::Result<Option<Vec<u8>>, ModelError> {
-        self.start_mailbox_execute(cmd, buf).map_err(|e| ModelError::CaliptraApiError(e))?;
+        self.start_mailbox_execute(cmd, buf)
+            .map_err(ModelError::CaliptraApiError)?;
         self.finish_mailbox_execute()
     }
-
 
     /// Wait for the response to a previous call to `start_mailbox_execute()`.
     fn finish_mailbox_execute(&mut self) -> std::result::Result<Option<Vec<u8>>, ModelError> {
@@ -947,7 +921,7 @@ pub trait HwModel: SocManager {
 
     /// Upload firmware to the mailbox.
     fn upload_firmware(&mut self, firmware: &[u8]) -> Result<(), ModelError> {
-        let response = self.mailbox_execute(FW_LOAD_CMD_OPCODE, firmware)?;
+        let response = self.mailbox_execute(FW_LOAD_CMD_OPCODE, firmware, &mut MboxBuffer::default())?;
         if response.is_some() {
             return Err(ModelError::UploadFirmwareUnexpectedResponse);
         }
@@ -990,7 +964,7 @@ pub trait HwModel: SocManager {
 
     /// Upload measurement to the mailbox.
     fn upload_measurement(&mut self, measurement: &[u8]) -> Result<(), ModelError> {
-        let response = self.mailbox_execute(STASH_MEASUREMENT_CMD_OPCODE, measurement)?;
+        let response = self.mailbox_execute(STASH_MEASUREMENT_CMD_OPCODE, measurement, &mut MboxBuffer::default())?;
 
         // We expect a response
         let response = response.ok_or(ModelError::UploadMeasurementResponseError)?;
@@ -1021,7 +995,7 @@ mod tests {
     use crate::{
         mmio::Rv32GenMmio, BootParams, DefaultHwModel, HwModel, InitParams, ModelError, ShaAccMode,
     };
-    use caliptra_api::mailbox::{self, CommandId, MailboxReqHeader, MailboxRespHeader};
+    use caliptra_api::{mailbox::{self, CommandId, MailboxReqHeader, MailboxRespHeader}, MboxBuffer};
     use caliptra_builder::firmware;
     use caliptra_emu_bus::Bus;
     use caliptra_emu_types::RvSize;
@@ -1271,7 +1245,7 @@ mod tests {
 
         // Send command that echoes the command and input message
         assert_eq!(
-            model.mailbox_execute(0x1000_0000, &message),
+            model.mailbox_execute(0x1000_0000, &message, &mut MboxBuffer::default()),
             Ok(Some(
                 [[0x00, 0x00, 0x00, 0x10].as_slice(), &message].concat()
             )),
@@ -1279,7 +1253,7 @@ mod tests {
 
         // Send command that echoes the command and input message
         assert_eq!(
-            model.mailbox_execute(0x1000_0000, &message[..8]),
+            model.mailbox_execute(0x1000_0000, &message[..8], &mut MboxBuffer::default()),
             Ok(Some(vec![
                 0x00, 0x00, 0x00, 0x10, 0x90, 0x5e, 0x1f, 0xad, 0x8b, 0x60, 0xb0, 0xbf
             ])),
@@ -1287,25 +1261,25 @@ mod tests {
 
         // Send command that returns 7 bytes of output
         assert_eq!(
-            model.mailbox_execute(0x1000_1000, &[]),
+            model.mailbox_execute(0x1000_1000, &[], &mut MboxBuffer::default()),
             Ok(Some(vec![0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd]))
         );
 
         // Send command that returns 7 bytes of output, and doesn't consume input
         assert_eq!(
-            model.mailbox_execute(0x1000_1000, &[42]),
+            model.mailbox_execute(0x1000_1000, &[42], &mut MboxBuffer::default()),
             Ok(Some(vec![0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd])),
         );
 
         // Send command that returns 0 bytes of output
-        assert_eq!(model.mailbox_execute(0x1000_2000, &[]), Ok(Some(vec![])));
+        assert_eq!(model.mailbox_execute(0x1000_2000, &[], &mut MboxBuffer::default()), Ok(Some(vec![])));
 
         // Send command that returns success with no output
-        assert_eq!(model.mailbox_execute(0x2000_0000, &[]), Ok(None));
+        assert_eq!(model.mailbox_execute(0x2000_0000, &[], &mut MboxBuffer::default()), Ok(None));
 
         // Send command that returns failure
         assert_eq!(
-            model.mailbox_execute(0x4000_0000, &message),
+            model.mailbox_execute(0x4000_0000, &message, &mut MboxBuffer::default()),
             Err(ModelError::MailboxCmdFailed(0))
         );
     }
@@ -1381,7 +1355,7 @@ mod tests {
         );
 
         // Ask firmware to unlock mailbox for sha512acc use.
-        model.mailbox_execute(0x5000_0000, &[]).unwrap();
+        model.mailbox_execute(0x5000_0000, &[], &mut MboxBuffer::default()).unwrap();
 
         let tests = vec![
             Sha384Test {
@@ -1474,8 +1448,8 @@ mod tests {
             type Resp = TestResp;
         }
 
-        fn set_response(model: &mut DefaultHwModel, data: &[u8]) {
-            model.mailbox_execute(SET_RESPONSE_CMD, data).unwrap();
+        fn set_response(model: &mut DefaultHwModel, data: &[u8], resp_buffer: &mut MboxBuffer) {
+            model.mailbox_execute(SET_RESPONSE_CMD, data, resp_buffer).unwrap();
         }
 
         let rom =
@@ -1496,6 +1470,7 @@ mod tests {
             &[
                 0x2d, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, b'H', b'I', b'!', b'!',
             ],
+            &mut MboxBuffer::default()
         );
         let resp = model
             .mailbox_execute_req(TestReq {
@@ -1523,6 +1498,7 @@ mod tests {
             &[
                 0x2d, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, b'H', b'I', b'!',
             ],
+            &mut MboxBuffer::default()
         );
         let resp = model.mailbox_execute_req(TestReq {
             data: *b"Hi!!",
@@ -1543,6 +1519,7 @@ mod tests {
             &[
                 0x2e, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, b'H', b'I', b'!', b'!',
             ],
+            &mut MboxBuffer::default()
         );
         let resp = model.mailbox_execute_req(TestReq {
             data: *b"Hi!!",
@@ -1562,6 +1539,7 @@ mod tests {
             &[
                 0x0c, 0xff, 0xff, 0xff, 0x01, 0x20, 0x00, 0x00, b'H', b'I', b'!', b'!',
             ],
+            &mut MboxBuffer::default()
         );
         let resp = model.mailbox_execute_req(TestReq {
             data: *b"Hi!!",

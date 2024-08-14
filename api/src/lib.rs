@@ -12,8 +12,9 @@ use caliptra_emu_types::mmio::BusMmio;
 pub use caliptra_error as error;
 pub use capabilities::Capabilities;
 pub use checksum::{calc_checksum, verify_checksum};
+pub use crate::mailbox::MboxBuffer;
 
-use crate::mailbox::mbox_write_fifo;
+pub use crate::mailbox::mbox_write_fifo;
 
 pub trait SocManager {
     type TBus<'a>: Bus
@@ -141,7 +142,6 @@ pub trait SocManager {
         }
     }
 
-
     /// Send a command to the mailbox but don't wait for the response
     fn start_mailbox_execute(
         &mut self,
@@ -159,7 +159,6 @@ pub trait SocManager {
             return Err(CaliptraApiError::UnableToReadMailbox);
         }
 
-
         self.soc_mbox().cmd().write(|_| cmd);
         mbox_write_fifo(&self.soc_mbox(), buf)?;
 
@@ -168,7 +167,6 @@ pub trait SocManager {
 
         Ok(())
     }
-
 }
 #[derive(Debug, Eq, PartialEq)]
 pub enum CaliptraApiError {

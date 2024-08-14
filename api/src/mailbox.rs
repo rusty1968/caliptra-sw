@@ -924,7 +924,7 @@ impl Request for QuotePcrsReq {
     type Resp = QuotePcrsResp;
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Default, PartialEq, Eq)]
 pub struct MboxBuffer {
     pub data: ArrayVec<u8, { Self::MAX_SIZE }>,
 }
@@ -932,17 +932,26 @@ impl MboxBuffer {
     const MAX_SIZE: usize = 2048;
 }
 
-pub fn mbox_read_fifo(mbox: mbox::RegisterBlock<impl MmioMut>, buffer: &mut MboxBuffer) -> core::result::Result<(), CaliptraApiError> {
+pub fn mbox_read_fifo(
+    mbox: mbox::RegisterBlock<impl MmioMut>,
+    buffer: &mut MboxBuffer,
+) -> core::result::Result<(), CaliptraApiError> {
     let mut dlen = mbox.dlen().read();
     while dlen >= 4 {
-        buffer.data.try_extend_from_slice(&mbox.dataout().read().to_le_bytes()).map_err(|_| CaliptraApiError::UnableToReadMailbox)?;
+        buffer
+            .data
+            .try_extend_from_slice(&mbox.dataout().read().to_le_bytes())
+            .map_err(|_| CaliptraApiError::UnableToReadMailbox)?;
         dlen -= 4;
     }
     if dlen > 0 {
         // Unwrap cannot panic because dlen is less than 4
-        buffer.data.try_extend_from_slice(
-            &mbox.dataout().read().to_le_bytes()[..usize::try_from(dlen).unwrap()],
-        ).map_err(|_| CaliptraApiError::UnableToReadMailbox)?;
+        buffer
+            .data
+            .try_extend_from_slice(
+                &mbox.dataout().read().to_le_bytes()[..usize::try_from(dlen).unwrap()],
+            )
+            .map_err(|_| CaliptraApiError::UnableToReadMailbox)?;
     }
     Ok(())
 }
