@@ -6,15 +6,15 @@ mod capabilities;
 mod checksum;
 pub mod mailbox;
 
+pub use crate::mailbox::MboxBuffer;
 use caliptra_api_types::Fuses;
 use caliptra_emu_types::bus::Bus;
 use caliptra_emu_types::mmio::BusMmio;
 pub use caliptra_error as error;
 pub use capabilities::Capabilities;
 pub use checksum::{calc_checksum, verify_checksum};
-pub use crate::mailbox::MboxBuffer;
 
-pub use crate::mailbox::mbox_write_fifo;
+pub use crate::mailbox::{mbox_read_fifo, mbox_write_fifo};
 
 pub trait SocManager {
     type TBus<'a>: Bus
@@ -172,5 +172,6 @@ pub trait SocManager {
 pub enum CaliptraApiError {
     UnableToLockMailbox,
     UnableToReadMailbox,
+    NoRequestsAvail,
     BufferTooLargeForMailbox,
 }
