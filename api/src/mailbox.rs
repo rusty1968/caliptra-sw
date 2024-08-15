@@ -930,6 +930,9 @@ pub struct MboxBuffer {
 }
 impl MboxBuffer {
     const MAX_SIZE: usize = 2048;
+    pub fn as_slice(&self) -> &[u8] {
+        &self.data
+    }
 }
 
 pub fn mbox_read_fifo(
