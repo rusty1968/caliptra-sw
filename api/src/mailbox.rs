@@ -956,6 +956,7 @@ pub fn mbox_read_fifo(
             )
             .map_err(|_| CaliptraApiError::UnableToReadMailbox)?;
     }
+    assert_eq!(mbox.dlen().read() as usize, buffer.data.len());
     Ok(())
 }
 
