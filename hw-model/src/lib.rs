@@ -5,7 +5,8 @@ use api::mailbox::{MailboxReqHeader, MailboxRespHeader, Response};
 use caliptra_api::{self as api, CaliptraApiError};
 use caliptra_api::{mbox_read_fifo, mbox_write_fifo};
 use caliptra_api_types as api_types;
-//use sha2::digest::typenum::Mod;
+use caliptra_registers::mbox::enums::{MboxFsmE, MboxStatusE};
+
 use std::mem;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -21,7 +22,7 @@ use caliptra_hw_model_types::{
 };
 use zerocopy::{AsBytes, FromBytes, LayoutVerified, Unalign};
 
-use caliptra_registers::mbox::enums::{MboxFsmE, MboxStatusE};
+//use caliptra_registers::mbox::enums::{MboxFsmE, MboxStatusE};
 use caliptra_registers::soc_ifc::regs::{
     CptraItrngEntropyConfig0WriteVal, CptraItrngEntropyConfig1WriteVal,
 };
@@ -41,6 +42,8 @@ mod model_fpga_realtime;
 
 mod output;
 mod rv32_builder;
+
+//pub mod helpers;
 
 pub use api::{MboxBuffer, SocManager};
 pub use api_types::{DeviceLifecycle, Fuses, SecurityState, U4};
@@ -77,6 +80,8 @@ pub type DefaultHwModel = ModelVerilated;
 
 #[cfg(feature = "fpga_realtime")]
 pub type DefaultHwModel = ModelFpgaRealtime;
+
+
 
 /// Constructs an HwModel based on the cargo features and environment
 /// variables. Most test cases that need to construct a HwModel should use this
@@ -387,9 +392,20 @@ pub struct MailboxRequest<'a> {
 }
 
 pub struct MailboxRecvTxn<'m, 'r, TModel: HwModel> {
-    model: &'m mut TModel,
+    pub model: &'m mut TModel,
     pub req: MailboxRequest<'r>,
 }
+
+impl<'m, 'r, Model: HwModel> MailboxRecvTxn<'m, 'r, Model> {
+    pub fn new(model: &'m mut Model, req: MailboxRequest<'r>) -> Self {
+        crate::MailboxRecvTxn {
+            model,
+            req
+        }
+    }
+}
+
+
 impl<'m, 'r, Model: HwModel> MailboxRecvTxn<'m, 'r, Model> {
     pub fn respond_success(self) {
         self.complete(MboxStatusE::CmdComplete);
@@ -792,7 +808,7 @@ pub trait HwModel: SocManager {
             .map_err(ModelError::CaliptraApiError)?;
         let res = self.finish_mailbox_execute(resp_data)?;
         dbg!(res.clone());
-        Ok(res) 
+        Ok(res)
     }
 
     /// Wait for the response to a previous call to `start_mailbox_execute()`.
@@ -824,7 +840,11 @@ pub trait HwModel: SocManager {
         }
         if status.cmd_complete() {
             writeln!(self.output().logger(), ">>> mbox cmd response: success").unwrap();
-            writeln!(self.output().logger(), ">>> mbox cmd response: no data ready").unwrap();
+            writeln!(
+                self.output().logger(),
+                ">>> mbox cmd response: no data ready"
+            )
+            .unwrap();
             self.soc_mbox().execute().write(|w| w.execute(false));
             return Ok(None);
         }
@@ -924,42 +944,42 @@ pub trait HwModel: SocManager {
         Ok(())
     }
 
-    //    fn wait_for_mailbox_receive<'a>(
-    //        &mut self,
-    //        buffer: &'a mut MboxBuffer,
-    //    ) -> Result<MailboxRequest<'a>, ModelError>
-    //    where
-    //        Self: Sized,
-    //    {
-    //        loop {
-    //            match self.try_mailbox_receive(buffer) {
-    //                Ok(cmd) => return Ok(MailboxRequest { cmd, data: buffer }),
-    //                Err(ModelError::CaliptraApiError(CaliptraApiError::NoRequestsAvail)) => continue,
-    //               Err(e) => break Err(e),
-    //           }
-    //        }
-    //    }
+    fn wait_for_mailbox_receive<'a>(
+        &mut self,
+        buffer: &'a mut MboxBuffer,
+    ) -> Result<MailboxRequest<'a>, ModelError>
+    where
+        Self: Sized,
+    {
+        loop {
+            match self.try_mailbox_receive(buffer) {
+                Ok(cmd) => return Ok(MailboxRequest { cmd, data: buffer }),
+                Err(ModelError::CaliptraApiError(CaliptraApiError::NoRequestsAvail)) => continue,
+                Err(e) => break Err(e),
+            }
+        }
+    }
 
-    //    fn try_mailbox_receive(&mut self, buffer: &mut MboxBuffer) -> Result<u32, ModelError>
-    //    where
-    //        Self: Sized,
-    //    {
-    //        if !self
-    //            .soc_mbox()
-    //            .status()
-    //            .read()
-    //            .mbox_fsm_ps()
-    //            .mbox_execute_soc()
-    //        {
-    //            self.step();
-    //            return Err(ModelError::CaliptraApiError(
-    //                CaliptraApiError::NoRequestsAvail,
-    //            ));
-    //        }
-    //        let cmd = self.soc_mbox().cmd().read();
-    //        mbox_read_fifo(self.soc_mbox(), buffer).map_err(ModelError::CaliptraApiError)?;
-    //        Ok(cmd)
-    //    }
+    fn try_mailbox_receive(&mut self, buffer: &mut MboxBuffer) -> Result<u32, ModelError>
+    where
+        Self: Sized,
+    {
+        if !self
+            .soc_mbox()
+            .status()
+            .read()
+            .mbox_fsm_ps()
+            .mbox_execute_soc()
+        {
+            self.step();
+            return Err(ModelError::CaliptraApiError(
+                CaliptraApiError::NoRequestsAvail,
+            ));
+        }
+        let cmd = self.soc_mbox().cmd().read();
+        mbox_read_fifo(self.soc_mbox(), buffer).map_err(ModelError::CaliptraApiError)?;
+        Ok(cmd)
+    }
 
     /// Upload measurement to the mailbox.
     fn upload_measurement(&mut self, measurement: &[u8]) -> Result<(), ModelError> {
@@ -990,6 +1010,7 @@ pub trait HwModel: SocManager {
     }
 }
 
+
 #[cfg(test)]
 mod tests {
     use crate::{
@@ -1006,8 +1027,9 @@ mod tests {
     use caliptra_hw_model::SocManager;
     use caliptra_registers::soc_ifc;
     use zerocopy::{AsBytes, FromBytes};
+    use caliptra_registers::mbox::enums::MboxStatusE;
 
-    use crate as caliptra_hw_model;
+    use crate::{self as caliptra_hw_model, MailboxRecvTxn};
 
     const MBOX_ADDR_BASE: u32 = 0x3002_0000;
     const MBOX_ADDR_LOCK: u32 = MBOX_ADDR_BASE;
@@ -1173,8 +1195,6 @@ mod tests {
             assert_eq!(expected.as_slice(), buffer.data.as_slice());
         }
 
-
-        
         // Send command that echoes the command and input message
         let mut buffer = MboxBuffer::default();
         let result = model
@@ -1185,11 +1205,9 @@ mod tests {
         // Send command that echoes the command and input message
         assert_eq!(
             buffer.as_slice(),
-            vec![
-                0x00, 0x00, 0x00, 0x10, 0x90, 0x5e, 0x1f, 0xad, 0x8b, 0x60, 0xb0, 0xbf
-            ].as_slice()
-        );       
- 
+            vec![0x00, 0x00, 0x00, 0x10, 0x90, 0x5e, 0x1f, 0xad, 0x8b, 0x60, 0xb0, 0xbf].as_slice()
+        );
+
         // Send command that returns 7 bytes of output
         assert_eq!(
             model.mailbox_execute(0x1000_1000, &[], &mut MboxBuffer::default()),
@@ -1210,15 +1228,71 @@ mod tests {
 
         // Send command that returns success with no output
         let res = model.mailbox_execute(0x2000_0000, &[], &mut MboxBuffer::default());
-        assert!(
-            res.unwrap().is_none()
-        );
+        assert!(res.unwrap().is_none());
 
         // Send command that returns failure
         assert_eq!(
             model.mailbox_execute(0x4000_0000, &message, &mut MboxBuffer::default()),
             Err(ModelError::MailboxCmdFailed(0))
         );
+    }
+
+    #[test]
+    pub fn test_mailbox_receive() {
+        let rom = caliptra_builder::build_firmware_rom(&firmware::hw_model_tests::MAILBOX_SENDER)
+            .unwrap();
+
+        let mut model = caliptra_hw_model::new(
+            InitParams {
+                rom: &rom,
+                ..Default::default()
+            },
+            BootParams::default(),
+        )
+        .unwrap();
+
+        // Test 8-byte request, respond-with-success
+        let mut buffer = MboxBuffer::default();
+        let req: crate::MailboxRequest = model.wait_for_mailbox_receive(&mut buffer).unwrap();
+        assert_eq!(req.cmd, 0xe000_0000);
+        assert_eq!(
+            req.data.as_slice(),
+            &[0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef]
+        );
+
+        let txn = crate::MailboxRecvTxn {
+            model: &mut model,
+            req
+        };
+               
+        txn.respond_success();
+        model.step_until(|m| m.soc_ifc().cptra_fw_extended_error_info().at(0).read() != 0);
+        assert_eq!(
+            &model.soc_ifc().cptra_fw_extended_error_info().read()[..2],
+            &[MboxStatusE::CmdComplete as u32, 8]
+        );
+        // Signal that we're ready to move on...
+        model.soc_ifc().cptra_rsvd_reg().at(0).write(|_| 1);
+
+        // Test 3-byte request, respond with failure
+        let mut buffer = MboxBuffer::default();
+        let req = model.wait_for_mailbox_receive(&mut buffer).unwrap();
+        assert_eq!(req.cmd, 0xe000_1000);
+        assert_eq!(req.data.as_slice(), [0xdd, 0xcc, 0xbb].as_slice());
+
+        let txn = crate::MailboxRecvTxn {
+            model: &mut model,
+            req,
+        };
+        txn.respond_failure();
+        model.step_until(|m| m.soc_ifc().cptra_fw_extended_error_info().at(0).read() != 0);
+        assert_eq!(
+            &model.soc_ifc().cptra_fw_extended_error_info().read()[..2],
+            &[MboxStatusE::CmdFailure as u32, 3]
+        );
+
+        // TODO: Add test for txn.respond_with_data (this doesn't work yet due
+        // to https://github.com/chipsalliance/caliptra-rtl/issues/78)
     }
 
     struct Sha384Test<'a> {
