@@ -792,22 +792,22 @@ pub trait HwModel: SocManager {
     /// without data, Err(ModelError::MailboxCmdFailed) if the microcontroller
     /// responded with an error, or other model errors if there was a problem
     /// communicating with the mailbox.
-    fn mailbox_execute(
-        &mut self,
+    fn mailbox_execute<'m, 'r>(
+        &'m mut self,
         cmd: u32,
         buf: &[u8],
-        resp_data: &mut MboxBuffer,
-    ) -> std::result::Result<Option<usize>, ModelError> {
+        resp_data: &'r mut MboxBuffer,
+    ) -> std::result::Result<Option<&'r MboxBuffer>, ModelError> {
         self.start_mailbox_execute(cmd, buf)
             .map_err(ModelError::CaliptraApiError)?;
         self.finish_mailbox_execute(resp_data)
     }
 
     /// Wait for the response to a previous call to `start_mailbox_execute()`.
-    fn finish_mailbox_execute(
-        &mut self,
-        resp_data: &mut MboxBuffer,
-    ) -> std::result::Result<Option<usize>, ModelError> {
+    fn finish_mailbox_execute<'m, 'r>(
+        &'m mut self,
+        resp_data: &'r mut MboxBuffer,
+    ) -> std::result::Result<Option<&'r MboxBuffer>, ModelError> {
         // Wait for the microcontroller to finish executing
         let mut timeout_cycles = 40000000; // 100ms @400MHz
         while self.soc_mbox().status().read().status().cmd_busy() {
@@ -865,7 +865,7 @@ pub trait HwModel: SocManager {
             self.step();
             assert!(self.soc_mbox().status().read().mbox_fsm_ps().mbox_idle());
         }
-        Ok(Some(dlen as usize))
+        Ok(Some(resp_data))
     }
 
     /// Streams `data` to the sha512acc SoC interface. If `sha384` computes
@@ -1178,52 +1178,69 @@ mod tests {
         )
         .unwrap();
 
-        let mut buffer = MboxBuffer::default();
         // Send command that echoes the command and input message
-        if let Ok(Some(dlen)) = model.mailbox_execute(0x1000_0000, &message, &mut buffer) {
-            let expected = [[0x00, 0x00, 0x00, 0x10].as_slice(), &message].concat();
-            assert_eq!(dlen, expected.len());
-            assert_eq!(expected.as_slice(), buffer.data.as_slice());
-        }
-
-        // Send command that echoes the command and input message
-        let mut buffer = MboxBuffer::default();
-        let result = model
-            .mailbox_execute(0x1000_0000, &message[..8], &mut buffer)
-            .unwrap();
-        assert_eq!(result, Some(buffer.data.len()));
-
-        // Send command that echoes the command and input message
+        let mut response = MboxBuffer::default();
         assert_eq!(
-            buffer.as_slice(),
-            vec![0x00, 0x00, 0x00, 0x10, 0x90, 0x5e, 0x1f, 0xad, 0x8b, 0x60, 0xb0, 0xbf].as_slice()
+            model
+                .mailbox_execute(0x1000_0000, &message, &mut response)
+                .unwrap()
+                .unwrap()
+                .as_bytes(),
+            [[0x00, 0x00, 0x00, 0x10].as_slice(), &message].concat(),
+        );
+
+        // Send command that echoes the command and input message
+        let mut response = MboxBuffer::default();
+        assert_eq!(
+            model
+                .mailbox_execute(0x1000_0000, &message[..8], &mut response)
+                .unwrap()
+                .unwrap()
+                .as_slice(),
+            &[0x00, 0x00, 0x00, 0x10, 0x90, 0x5e, 0x1f, 0xad, 0x8b, 0x60, 0xb0, 0xbf],
         );
 
         // Send command that returns 7 bytes of output
+        let mut response = MboxBuffer::default();
         assert_eq!(
-            model.mailbox_execute(0x1000_1000, &[], &mut MboxBuffer::default()),
-            Ok(Some(7usize)),
+            model
+                .mailbox_execute(0x1000_1000, &[], &mut response)
+                .unwrap()
+                .unwrap()
+                .as_slice(),
+            &[0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd]
         );
 
         // Send command that returns 7 bytes of output, and doesn't consume input
+        let mut response = MboxBuffer::default();
         assert_eq!(
-            model.mailbox_execute(0x1000_1000, &[42], &mut MboxBuffer::default()),
-            Ok(Some(7usize)),
+            model
+                .mailbox_execute(0x1000_1000, &[42], &mut response)
+                .unwrap()
+                .unwrap()
+                .as_slice(),
+            &[0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd],
         );
 
         // Send command that returns 0 bytes of output
+        let empty_slice: &[u8] = &[];
+        let mut response = MboxBuffer::default();
         assert_eq!(
-            model.mailbox_execute(0x1000_2000, &[], &mut MboxBuffer::default()),
-            Ok(Some(0usize))
+            model.mailbox_execute(0x1000_2000, &[], &mut response).unwrap().unwrap().as_slice(),
+            empty_slice
         );
 
         // Send command that returns success with no output
-        let res = model.mailbox_execute(0x2000_0000, &[], &mut MboxBuffer::default());
-        assert!(res.unwrap().is_none());
+        let mut response = MboxBuffer::default();
+        assert_eq!(
+            model.mailbox_execute(0x2000_0000, &[], &mut response),
+            Ok(None)
+        );
 
         // Send command that returns failure
+        let mut response = MboxBuffer::default();
         assert_eq!(
-            model.mailbox_execute(0x4000_0000, &message, &mut MboxBuffer::default()),
+            model.mailbox_execute(0x4000_0000, &message, &mut response),
             Err(ModelError::MailboxCmdFailed(0))
         );
     }

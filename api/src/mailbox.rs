@@ -10,6 +10,7 @@ use ureg::MmioMut;
 
 use crate::CaliptraApiError;
 use arrayvec::ArrayVec;
+use core::ops::Deref;
 
 #[derive(PartialEq, Eq)]
 pub struct CommandId(pub u32);
@@ -931,6 +932,14 @@ pub struct MboxBuffer {
 impl MboxBuffer {
     const MAX_SIZE: usize = 2048;
     pub fn as_slice(&self) -> &[u8] {
+        &self.data
+    }
+}
+
+impl Deref for MboxBuffer {
+    type Target = ArrayVec<u8, { Self::MAX_SIZE }>;
+
+    fn deref(&self) -> &Self::Target {
         &self.data
     }
 }
