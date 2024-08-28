@@ -18,7 +18,7 @@ use caliptra_drivers::pcr_log::MeasurementLogEntry;
 use caliptra_drivers::{ColdResetEntry4, PcrId, RomVerifyConfig};
 use caliptra_error::CaliptraError;
 use caliptra_hw_model::{
-    BootParams, Fuses, HwModel, InitParams, ModelError, SecurityState, SocManager,
+    BootParams, Fuses, HwModel, InitParams, MboxBuffer, ModelError, SecurityState, SocManager,
 };
 use caliptra_image_crypto::OsslCrypto as Crypto;
 use caliptra_image_fake_keys::{OWNER_CONFIG, VENDOR_CONFIG_KEY_1};
@@ -178,7 +178,11 @@ fn test_pcr_log() {
 
     hw.step_until_boot_status(u32::from(ColdResetComplete), true);
 
-    let pcr_entry_arr = hw.mailbox_execute(0x1000_0000, &[]).unwrap().unwrap();
+    let mut buffer = MboxBuffer::default();
+    let pcr_entry_arr = hw
+        .mailbox_execute(0x1000_0000, &[], &mut buffer)
+        .unwrap()
+        .unwrap();
 
     let device_lifecycle = hw
         .soc_ifc()
@@ -280,7 +284,11 @@ fn test_pcr_log_no_owner_key_digest_fuse() {
 
     hw.step_until_boot_status(u32::from(ColdResetComplete), true);
 
-    let pcr_entry_arr = hw.mailbox_execute(0x1000_0000, &[]).unwrap().unwrap();
+    let mut buffer = MboxBuffer::default();
+    let pcr_entry_arr = hw
+        .mailbox_execute(0x1000_0000, &[], &mut buffer)
+        .unwrap()
+        .unwrap();
 
     let device_lifecycle = hw
         .soc_ifc()
@@ -373,7 +381,11 @@ fn test_pcr_log_fmc_fuse_svn() {
 
     hw.step_until_boot_status(u32::from(ColdResetComplete), true);
 
-    let pcr_entry_arr = hw.mailbox_execute(0x1000_0000, &[]).unwrap().unwrap();
+    let mut buffer = MboxBuffer::default();
+    let pcr_entry_arr = hw
+        .mailbox_execute(0x1000_0000, &[], &mut buffer)
+        .unwrap()
+        .unwrap();
 
     let device_lifecycle = hw
         .soc_ifc()
@@ -514,11 +526,19 @@ fn test_pcr_log_across_update_reset() {
 
     hw.step_until_boot_status(u32::from(ColdResetComplete), true);
 
-    let pcr_entry_arr = hw.mailbox_execute(0x1000_0000, &[]).unwrap().unwrap();
+    let mut buffer = MboxBuffer::default();
+    let pcr_entry_arr = hw
+        .mailbox_execute(0x1000_0000, &[], &mut buffer)
+        .unwrap()
+        .unwrap();
 
     // Fetch and validate PCR values against the log.
 
-    let pcrs = hw.mailbox_execute(0x1000_0006, &[]).unwrap().unwrap();
+    let mut buffer = MboxBuffer::default();
+    let pcrs = hw
+        .mailbox_execute(0x1000_0006, &[], &mut buffer)
+        .unwrap()
+        .unwrap();
     assert_eq!(pcrs.len(), PCR_COUNT * 48);
 
     let mut pcr0_from_hw: [u8; 48] = pcrs[0..48].try_into().unwrap();
@@ -544,12 +564,20 @@ fn test_pcr_log_across_update_reset() {
         .unwrap();
     hw.step_until_boot_status(UpdateResetComplete.into(), true);
 
-    let pcr_entry_arr = hw.mailbox_execute(0x1000_0000, &[]).unwrap().unwrap();
+    let mut buffer = MboxBuffer::default();
+    let pcr_entry_arr = hw
+        .mailbox_execute(0x1000_0000, &[], &mut buffer)
+        .unwrap()
+        .unwrap();
 
     // Fetch and validate PCR values against the log. PCR0 should represent the
     // latest boot, while PCR1 should represent the whole journey.
 
-    let pcrs_after_reset = hw.mailbox_execute(0x1000_0006, &[]).unwrap().unwrap();
+    let mut buffer = MboxBuffer::default();
+    let pcrs_after_reset = hw
+        .mailbox_execute(0x1000_0006, &[], &mut buffer)
+        .unwrap()
+        .unwrap();
     assert_eq!(pcrs_after_reset.len(), PCR_COUNT * 48);
 
     let mut new_pcr0_from_hw: [u8; 48] = pcrs_after_reset[0..48].try_into().unwrap();
@@ -565,10 +593,19 @@ fn test_pcr_log_across_update_reset() {
     assert_eq!(new_pcr1_from_log, new_pcr1_from_hw);
 
     // Also ensure PCR locks are configured correctly.
-    let reset_checks = hw.mailbox_execute(0x1000_0007, &[]).unwrap().unwrap();
-    assert_eq!(reset_checks, [0; 4]);
+    let mut buffer = MboxBuffer::default();
+    let reset_checks = hw
+        .mailbox_execute(0x1000_0007, &[], &mut buffer)
+        .unwrap()
+        .unwrap();
+    assert_eq!(reset_checks.as_slice(), &[0; 4]);
 
-    let pcrs_after_clear = hw.mailbox_execute(0x1000_0006, &[]).unwrap().unwrap();
+    let mut buffer = MboxBuffer::default();
+
+    let pcrs_after_clear = hw
+        .mailbox_execute(0x1000_0006, &[], &mut buffer)
+        .unwrap()
+        .unwrap();
     assert_eq!(pcrs_after_clear, pcrs_after_reset);
 }
 
@@ -615,7 +652,11 @@ fn test_fuse_log() {
 
     hw.step_until_boot_status(u32::from(ColdResetComplete), true);
 
-    let fuse_entry_arr = hw.mailbox_execute(0x1000_0002, &[]).unwrap().unwrap();
+    let mut buffer = MboxBuffer::default();
+    let fuse_entry_arr = hw
+        .mailbox_execute(0x1000_0002, &[], &mut buffer)
+        .unwrap()
+        .unwrap();
 
     let mut fuse_log_entry_offset = 0;
 
@@ -741,7 +782,11 @@ fn test_fht_info() {
 
     hw.step_until_boot_status(u32::from(ColdResetComplete), true);
 
-    let data = hw.mailbox_execute(0x1000_0003, &[]).unwrap().unwrap();
+    let mut buffer = MboxBuffer::default();
+    let data = hw
+        .mailbox_execute(0x1000_0003, &[], &mut buffer)
+        .unwrap()
+        .unwrap();
     let fht = FirmwareHandoffTable::read_from_prefix(data.as_bytes()).unwrap();
     assert_eq!(fht.ldevid_tbs_size, 552);
     assert_eq!(fht.fmcalias_tbs_size, 786);
@@ -784,7 +829,11 @@ fn test_check_no_lms_info_in_datavault_on_lms_unavailable() {
 
     hw.step_until_boot_status(u32::from(ColdResetComplete), true);
 
-    let coldresetentry4_array = hw.mailbox_execute(0x1000_0005, &[]).unwrap().unwrap();
+    let mut buffer = MboxBuffer::default();
+    let coldresetentry4_array = hw
+        .mailbox_execute(0x1000_0005, &[], &mut buffer)
+        .unwrap()
+        .unwrap();
     let mut coldresetentry4_offset = core::mem::size_of::<u32>() * 8; // Skip first 4 entries
 
     // Check LmsVendorPubKeyIndex datavault value.
@@ -832,7 +881,11 @@ fn test_check_rom_cold_boot_status_reg() {
 
     hw.step_until_boot_status(u32::from(ColdResetComplete), true);
 
-    let coldresetentry4_array = hw.mailbox_execute(0x1000_0005, &[]).unwrap().unwrap();
+    let mut buffer = MboxBuffer::default();
+    let coldresetentry4_array = hw
+        .mailbox_execute(0x1000_0005, &[], &mut buffer)
+        .unwrap()
+        .unwrap();
     let mut coldresetentry4_offset = core::mem::size_of::<u32>() * 2; // Skip first entry
 
     // Check RomColdBootStatus datavault value.
@@ -899,19 +952,31 @@ fn test_upload_single_measurement() {
     hw.step_until_boot_status(u32::from(ColdResetComplete), true);
 
     // Check if the measurement was present in the measurement log.
-    let measurement_log = hw.mailbox_execute(0x1000_000A, &[]).unwrap().unwrap();
+    let mut buffer = MboxBuffer::default();
+    let measurement_log = hw
+        .mailbox_execute(0x1000_000A, &[], &mut buffer)
+        .unwrap()
+        .unwrap();
 
     assert_eq!(measurement_log.len(), MEASUREMENT_ENTRY_SIZE);
     check_measurement_log_entry(&measurement_log, 0, &measurement);
 
     // Get PCR31
-    let pcr31 = hw.mailbox_execute(0x1000_0009, &[]).unwrap().unwrap();
+    let mut buffer = MboxBuffer::default();
+    let pcr31 = hw
+        .mailbox_execute(0x1000_0009, &[], &mut buffer)
+        .unwrap()
+        .unwrap();
 
     // Check that the measurement was extended to PCR31.
     let expected_pcr = hash_measurement_log_entries(&measurement_log);
     assert_eq!(pcr31.as_bytes(), expected_pcr);
 
-    let data = hw.mailbox_execute(0x1000_0003, &[]).unwrap().unwrap();
+    let mut buffer = MboxBuffer::default();
+    let data = hw
+        .mailbox_execute(0x1000_0003, &[], &mut buffer)
+        .unwrap()
+        .unwrap();
     let fht = FirmwareHandoffTable::read_from_prefix(data.as_bytes()).unwrap();
     assert_eq!(fht.meas_log_index, 1);
 }
@@ -973,7 +1038,11 @@ fn test_upload_measurement_limit() {
     hw.step_until_boot_status(u32::from(ColdResetComplete), true);
 
     // Check the measurement log.
-    let measurement_log = hw.mailbox_execute(0x1000_000A, &[]).unwrap().unwrap();
+    let mut buffer = MboxBuffer::default();
+    let measurement_log = hw
+        .mailbox_execute(0x1000_000A, &[], &mut buffer)
+        .unwrap()
+        .unwrap();
     assert_eq!(
         measurement_log.len(),
         MEASUREMENT_ENTRY_SIZE * MEASUREMENT_MAX_COUNT
@@ -986,13 +1055,21 @@ fn test_upload_measurement_limit() {
     }
 
     // Get PCR31
-    let pcr31 = hw.mailbox_execute(0x1000_0009, &[]).unwrap().unwrap();
+    let mut buffer = MboxBuffer::default();
+    let pcr31 = hw
+        .mailbox_execute(0x1000_0009, &[], &mut buffer)
+        .unwrap()
+        .unwrap();
 
     // Check that the measurement was extended to PCR31.
     let expected_pcr = hash_measurement_log_entries(&measurement_log);
     assert_eq!(pcr31.as_bytes(), expected_pcr);
 
-    let data = hw.mailbox_execute(0x1000_0003, &[]).unwrap().unwrap();
+    let mut buffer = MboxBuffer::default();
+    let data = hw
+        .mailbox_execute(0x1000_0003, &[], &mut buffer)
+        .unwrap()
+        .unwrap();
     let fht = FirmwareHandoffTable::read_from_prefix(data.as_bytes()).unwrap();
     assert_eq!(fht.meas_log_index, MEASUREMENT_MAX_COUNT as u32);
 }
@@ -1090,14 +1167,26 @@ fn test_upload_no_measurement() {
     hw.step_until_boot_status(u32::from(ColdResetComplete), true);
 
     // Check whether the fake measurement was extended to PCR31.
-    let pcr31 = hw.mailbox_execute(0x1000_0009, &[]).unwrap().unwrap();
+    let mut buffer = MboxBuffer::default();
+    let pcr31 = hw
+        .mailbox_execute(0x1000_0009, &[], &mut buffer)
+        .unwrap()
+        .unwrap();
     assert_eq!(pcr31.as_bytes(), [0u8; 48]);
 
     // Check whether the fake measurement is in the measurement log.
-    let measurement_log = hw.mailbox_execute(0x1000_000A, &[]).unwrap().unwrap();
+    let mut buffer = MboxBuffer::default();
+    let measurement_log = hw
+        .mailbox_execute(0x1000_000A, &[], &mut buffer)
+        .unwrap()
+        .unwrap();
     assert_eq!(measurement_log.len(), 0);
 
-    let data = hw.mailbox_execute(0x1000_0003, &[]).unwrap().unwrap();
+    let mut buffer = MboxBuffer::default();
+    let data = hw
+        .mailbox_execute(0x1000_0003, &[], &mut buffer)
+        .unwrap()
+        .unwrap();
     let fht = FirmwareHandoffTable::read_from_prefix(data.as_bytes()).unwrap();
     assert_eq!(fht.meas_log_index, 0);
 }

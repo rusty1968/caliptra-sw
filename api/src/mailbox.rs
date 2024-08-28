@@ -931,9 +931,6 @@ pub struct MboxBuffer {
 }
 impl MboxBuffer {
     const MAX_SIZE: usize = 2048;
-    pub fn as_slice(&self) -> &[u8] {
-        &self.data
-    }
 }
 
 impl Deref for MboxBuffer {
@@ -949,7 +946,6 @@ impl DerefMut for MboxBuffer {
         &mut self.data
     }
 }
-
 
 pub fn mbox_read_fifo(
     mbox: mbox::RegisterBlock<impl MmioMut>,

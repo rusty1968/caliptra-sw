@@ -1020,7 +1020,7 @@ mod tests {
     use caliptra_registers::soc_ifc;
     use zerocopy::{AsBytes, FromBytes};
 
-    use crate::{self as caliptra_hw_model, MailboxRecvTxn};
+    use crate::{self as caliptra_hw_model};
 
     const MBOX_ADDR_BASE: u32 = 0x3002_0000;
     const MBOX_ADDR_LOCK: u32 = MBOX_ADDR_BASE;

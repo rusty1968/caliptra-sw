@@ -38,7 +38,7 @@ fn generate_csr(hw: &mut DefaultHwModel, image_bundle: &ImageBundle) -> Vec<u8> 
         let uploaded = hex::decode(csr_str).unwrap();
         assert_eq!(uploaded, downloaded);
     }
-    downloaded
+    downloaded.to_vec()
 }
 
 #[test]
@@ -137,7 +137,6 @@ fn verify_key(
     let payload = MailboxReqHeader {
         chksum: caliptra_common::checksum::calc_checksum(cmd_id, &[]),
     };
-
 
     // Execute the command
     let mut buffer = MboxBuffer::default();
