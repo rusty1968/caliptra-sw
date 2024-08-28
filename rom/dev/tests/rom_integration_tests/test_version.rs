@@ -5,7 +5,7 @@ use caliptra_common::fips::FipsVersionCmd;
 use caliptra_common::mailbox_api::{
     CommandId, FipsVersionResp, MailboxReqHeader, MailboxRespHeader,
 };
-use caliptra_hw_model::{Fuses, HwModel};
+use caliptra_hw_model::{Fuses, HwModel, MboxBuffer};
 use zerocopy::{AsBytes, FromBytes};
 
 use crate::helpers;
@@ -23,12 +23,13 @@ fn test_version() {
         chksum: caliptra_common::checksum::calc_checksum(u32::from(CommandId::VERSION), &[]),
     };
 
-    let response = hw
-        .mailbox_execute(CommandId::VERSION.into(), payload.as_bytes())
+    let mut response = MboxBuffer::default();
+    let resp_len = hw
+        .mailbox_execute(CommandId::VERSION.into(), payload.as_bytes(), &mut response)
         .unwrap()
         .unwrap();
 
-    let version_resp = FipsVersionResp::read_from(response.as_bytes()).unwrap();
+    let version_resp = FipsVersionResp::read_from(response.data.as_bytes()).unwrap();
 
     // Verify response checksum
     assert!(caliptra_common::checksum::verify_checksum(

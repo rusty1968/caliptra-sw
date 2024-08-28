@@ -14,8 +14,7 @@ use caliptra_drivers::MfgFlags;
 use caliptra_drivers::{Array4x12, IdevidCertAttr};
 use caliptra_error::CaliptraError;
 use caliptra_hw_model::{
-    BootParams, DeviceLifecycle, Fuses, HwModel, InitParams, ModelError, SecurityState, SocManager,
-    U4,
+    BootParams, DeviceLifecycle, Fuses, HwModel, InitParams, MboxBuffer, ModelError, SecurityState, SocManager, U4
 };
 use caliptra_image_crypto::OsslCrypto as Crypto;
 use caliptra_image_elf::ElfExecutable;
@@ -1872,13 +1871,15 @@ fn cert_test_with_custom_dates() {
         .write(|_| flags.bits());
 
     // Download the CSR from the mailbox.
-    let idevid_cert_bytes = helpers::get_csr(&mut hw).unwrap();
+    let mut buffer = MboxBuffer::default();
+    let idevid_cert_bytes = helpers::get_csr(&mut hw, &mut buffer).unwrap();
 
     hw.step_until(|m| m.soc_ifc().cptra_flow_status().read().ready_for_fw());
     hw.upload_firmware(&image_bundle.to_bytes().unwrap())
         .unwrap();
 
-    hw.mailbox_execute(0x1000_0001, &[]).unwrap();
+    let mut buffer = MboxBuffer::default();
+    hw.mailbox_execute(0x1000_0001, &[], &mut buffer).unwrap();
 
     let result = hw.copy_output_until_exit_success(&mut output);
     assert!(result.is_ok());
@@ -1932,13 +1933,15 @@ fn cert_test() {
         .write(|_| flags.bits());
 
     // Download the CSR from the mailbox.
-    let csr_bytes = helpers::get_csr(&mut hw).unwrap();
+    let mut buffer = MboxBuffer::default();
+    let csr_bytes = helpers::get_csr(&mut hw, &mut buffer).unwrap();
 
     hw.step_until(|m| m.soc_ifc().cptra_flow_status().read().ready_for_fw());
     hw.upload_firmware(&image_bundle.to_bytes().unwrap())
         .unwrap();
 
-    hw.mailbox_execute(0x1000_0001, &[]).unwrap();
+    let mut buffer = MboxBuffer::default();
+    hw.mailbox_execute(0x1000_0001, &[], &mut buffer).unwrap();
 
     let result = hw.copy_output_until_exit_success(&mut output);
     assert!(result.is_ok());
@@ -1992,13 +1995,16 @@ fn cert_test_with_ueid() {
         .write(|_| flags.bits());
 
     // Download the CSR from the mailbox.
-    let csr_bytes = helpers::get_csr(&mut hw).unwrap();
+    let mut buffer = MboxBuffer::default();
+    helpers::get_csr(&mut hw, &mut buffer).unwrap();
+    let csr_bytes = buffer.data.as_slice();
 
     hw.step_until(|m| m.soc_ifc().cptra_flow_status().read().ready_for_fw());
     hw.upload_firmware(&image_bundle.to_bytes().unwrap())
         .unwrap();
 
-    hw.mailbox_execute(0x1000_0001, &[]).unwrap();
+    let mut buffer = MboxBuffer::default();
+    hw.mailbox_execute(0x1000_0001, &[], &mut buffer).unwrap();
 
     let result = hw.copy_output_until_exit_success(&mut output);
     assert!(result.is_ok());
@@ -2335,7 +2341,9 @@ fn test_max_fw_image() {
     buf.append(&mut image_bundle.fmc.to_vec());
     buf.append(&mut image_bundle.runtime.to_vec());
 
-    let iccm_cmp: Vec<u8> = hw.mailbox_execute(0x1000_000E, &buf).unwrap().unwrap();
+    let mut buffer = MboxBuffer::default();
+    hw.mailbox_execute(0x1000_000E, &buf, &mut buffer).unwrap().unwrap();
+    let iccm_cmp = buffer.data.as_slice();
     assert_eq!(iccm_cmp.len(), 1);
     assert_eq!(iccm_cmp[0], 0);
 }

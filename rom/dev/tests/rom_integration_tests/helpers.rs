@@ -1,10 +1,8 @@
 // Licensed under the Apache-2.0 license
 
-use std::mem;
-
 use caliptra_builder::{firmware, ImageOptions};
-use caliptra_hw_model::{BootParams, Fuses, HwModel, InitParams, SecurityState};
-use caliptra_hw_model::{DefaultHwModel, ModelError, SocManager};
+use caliptra_hw_model::{BootParams, Fuses, HwModel, InitParams, MboxBuffer, SecurityState, SocManager};
+use caliptra_hw_model::{DefaultHwModel, ModelError};
 use caliptra_image_types::ImageBundle;
 
 pub fn build_hw_model_and_image_bundle(
@@ -57,13 +55,18 @@ pub fn get_data<'a>(to_match: &str, haystack: &'a str) -> &'a str {
         .unwrap_or("")
 }
 
-pub fn get_csr(hw: &mut DefaultHwModel) -> Result<Vec<u8>, ModelError> {
-    hw.step_until(|m| m.soc_ifc().cptra_flow_status().read().idevid_csr_ready());
-    let mut txn = hw.wait_for_mailbox_receive()?;
-    let result = mem::take(&mut txn.req.data);
+pub fn get_csr<'a, 'b, TModel: HwModel+SocManager>(model: &'a mut TModel, mut buffer: &'b mut MboxBuffer) -> Result<&'b[u8], ModelError> {
+    model.step_until(|m| m.soc_ifc().cptra_flow_status().read().idevid_csr_ready());
+
+    let req = model.wait_for_mailbox_receive(&mut buffer)?;
+
+    let txn = caliptra_hw_model::MailboxRecvTxn {
+        req,
+        model,
+    };
     txn.respond_success();
-    hw.soc_ifc().cptra_dbg_manuf_service_reg().write(|_| 0);
-    Ok(result)
+    model.soc_ifc().cptra_dbg_manuf_service_reg().write(|_| 0);
+    Ok(buffer.as_slice())
 }
 
 pub fn change_dword_endianess(data: &mut [u8]) {
