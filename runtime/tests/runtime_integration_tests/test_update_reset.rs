@@ -11,7 +11,7 @@ use caliptra_common::mailbox_api::{
 };
 use caliptra_drivers::PcrResetCounter;
 use caliptra_error::CaliptraError;
-use caliptra_hw_model::{DefaultHwModel, HwModel, SocManager};
+use caliptra_hw_model::{DefaultHwModel, HwModel, MboxBuffer, SocManager};
 use caliptra_runtime::{ContextState, RtBootStatus, PL0_DPE_ACTIVE_CONTEXT_THRESHOLD};
 use dpe::{
     context::{Context, ContextHandle, ContextType},
@@ -29,8 +29,10 @@ fn update_fw(model: &mut DefaultHwModel, rt_fw: &FwId<'static>, image_opts: Imag
         .unwrap()
         .to_bytes()
         .unwrap();
+    let mut resp_bytes = MboxBuffer::default();
+
     model
-        .mailbox_execute(u32::from(CommandId::FIRMWARE_LOAD), &image)
+        .mailbox_execute(u32::from(CommandId::FIRMWARE_LOAD), &image, &mut resp_bytes)
         .unwrap();
 }
 
@@ -45,10 +47,20 @@ fn test_rt_journey_pcr_updated_in_dpe() {
     // trigger update reset
     update_fw(&mut model, &MBOX, ImageOptions::default());
 
-    let rt_journey_pcr_resp = model.mailbox_execute(0x1000_0000, &[]).unwrap().unwrap();
+    let mut resp_bytes = MboxBuffer::default();
+
+    let rt_journey_pcr_resp = model
+        .mailbox_execute(0x1000_0000, &[], &mut resp_bytes)
+        .unwrap()
+        .unwrap();
     let rt_journey_pcr: [u8; 48] = rt_journey_pcr_resp.as_bytes().try_into().unwrap();
 
-    let dpe_root_measurement_resp = model.mailbox_execute(0x6000_0000, &[]).unwrap().unwrap();
+    let mut resp_bytes = MboxBuffer::default();
+
+    let dpe_root_measurement_resp = model
+        .mailbox_execute(0x6000_0000, &[], &mut resp_bytes)
+        .unwrap()
+        .unwrap();
     let dpe_root_measurement: [u8; 48] = dpe_root_measurement_resp.as_bytes().try_into().unwrap();
 
     assert_eq!(dpe_root_measurement, rt_journey_pcr);
@@ -69,23 +81,37 @@ fn test_tags_persistence() {
         tag: 1,
     });
     cmd.populate_chksum().unwrap();
+
+    let mut resp_bytes = MboxBuffer::default();
     let _ = model
-        .mailbox_execute(u32::from(CommandId::DPE_TAG_TCI), cmd.as_bytes().unwrap())
+        .mailbox_execute(
+            u32::from(CommandId::DPE_TAG_TCI),
+            cmd.as_bytes().unwrap(),
+            &mut resp_bytes,
+        )
         .unwrap()
         .expect("We expected a response");
 
     // trigger update reset
     update_fw(&mut model, &MBOX, ImageOptions::default());
 
+    let mut resp_bytes = MboxBuffer::default();
     const TAGS_INFO_SIZE: usize =
         size_of::<u32>() * MAX_HANDLES + size_of::<U8Bool>() * MAX_HANDLES;
-    let tags_resp_1 = model.mailbox_execute(0x7000_0000, &[]).unwrap().unwrap();
+    let tags_resp_1 = model
+        .mailbox_execute(0x7000_0000, &[], &mut resp_bytes)
+        .unwrap()
+        .unwrap();
     let tags_1: [u8; TAGS_INFO_SIZE] = tags_resp_1.as_bytes().try_into().unwrap();
 
     // trigger another update reset with same fw
     update_fw(&mut model, &MBOX, ImageOptions::default());
 
-    let tags_resp_2 = model.mailbox_execute(0x7000_0000, &[]).unwrap().unwrap();
+    let mut resp_bytes = MboxBuffer::default();
+    let tags_resp_2 = model
+        .mailbox_execute(0x7000_0000, &[], &mut resp_bytes)
+        .unwrap()
+        .unwrap();
     let tags_2: [u8; TAGS_INFO_SIZE] = tags_resp_2.as_bytes().try_into().unwrap();
 
     // check that the tags are the same across update resets
@@ -102,8 +128,9 @@ fn test_context_tags_validation() {
     let mut context_tags = [0u32; MAX_HANDLES];
     context_tags[20] = 1;
 
+    let mut resp_bytes = MboxBuffer::default();
     let _ = model
-        .mailbox_execute(0x8000_0000, context_tags.as_bytes())
+        .mailbox_execute(0x8000_0000, context_tags.as_bytes(), &mut resp_bytes)
         .unwrap()
         .unwrap();
 
@@ -124,8 +151,9 @@ fn test_context_has_tag_validation() {
     let mut context_has_tag = [U8Bool::new(false); MAX_HANDLES];
     context_has_tag[20] = U8Bool::new(true);
 
+    let mut resp_bytes = MboxBuffer::default();
     let _ = model
-        .mailbox_execute(0x9000_0000, context_has_tag.as_bytes())
+        .mailbox_execute(0x9000_0000, context_has_tag.as_bytes(), &mut resp_bytes)
         .unwrap()
         .unwrap();
 
@@ -143,15 +171,20 @@ fn test_dpe_validation_deformed_structure() {
     let mut model = run_rt_test(Some(&MBOX), None, None);
 
     // read DPE after RT initialization
-    let dpe_resp = model.mailbox_execute(0xA000_0000, &[]).unwrap().unwrap();
+    let mut resp_bytes = MboxBuffer::default();
+    let dpe_resp = model
+        .mailbox_execute(0xA000_0000, &[], &mut resp_bytes)
+        .unwrap()
+        .unwrap();
     let mut dpe = DpeInstance::read_from(dpe_resp.as_bytes()).unwrap();
 
     // corrupt DPE structure by creating multiple normal connected components
     dpe.contexts[0].children = 0;
     dpe.contexts[0].state = ContextState::Active;
     dpe.contexts[1].parent_idx = Context::ROOT_INDEX;
+    let mut resp_bytes = MboxBuffer::default();
     let _ = model
-        .mailbox_execute(0xB000_0000, dpe.as_bytes())
+        .mailbox_execute(0xB000_0000, dpe.as_bytes(), &mut resp_bytes)
         .unwrap()
         .unwrap();
 
@@ -176,8 +209,13 @@ fn test_dpe_validation_deformed_structure() {
     let payload = MailboxReqHeader {
         chksum: caliptra_common::checksum::calc_checksum(u32::from(CommandId::FW_INFO), &[]),
     };
+    let mut resp_bytes = MboxBuffer::default();
     let resp = model
-        .mailbox_execute(u32::from(CommandId::FW_INFO), payload.as_bytes())
+        .mailbox_execute(
+            u32::from(CommandId::FW_INFO),
+            payload.as_bytes(),
+            &mut resp_bytes,
+        )
         .unwrap()
         .unwrap();
     let info = FwInfoResp::read_from(resp.as_slice()).unwrap();
@@ -189,13 +227,18 @@ fn test_dpe_validation_illegal_state() {
     let mut model = run_rt_test(Some(&MBOX), None, None);
 
     // read DPE after RT initialization
-    let dpe_resp = model.mailbox_execute(0xA000_0000, &[]).unwrap().unwrap();
+    let mut resp_bytes = MboxBuffer::default();
+    let dpe_resp = model
+        .mailbox_execute(0xA000_0000, &[], &mut resp_bytes)
+        .unwrap()
+        .unwrap();
     let mut dpe = DpeInstance::read_from(dpe_resp.as_bytes()).unwrap();
 
     // corrupt DPE state by messing up parent-child links
     dpe.contexts[1].children = 0b1;
+    let mut resp_bytes = MboxBuffer::default();
     let _ = model
-        .mailbox_execute(0xB000_0000, dpe.as_bytes())
+        .mailbox_execute(0xB000_0000, dpe.as_bytes(), &mut resp_bytes)
         .unwrap()
         .unwrap();
 
@@ -220,8 +263,13 @@ fn test_dpe_validation_illegal_state() {
     let payload = MailboxReqHeader {
         chksum: caliptra_common::checksum::calc_checksum(u32::from(CommandId::FW_INFO), &[]),
     };
+    let mut resp_bytes = MboxBuffer::default();
     let resp = model
-        .mailbox_execute(u32::from(CommandId::FW_INFO), payload.as_bytes())
+        .mailbox_execute(
+            u32::from(CommandId::FW_INFO),
+            payload.as_bytes(),
+            &mut resp_bytes,
+        )
         .unwrap()
         .unwrap();
     let info = FwInfoResp::read_from(resp.as_slice()).unwrap();
@@ -232,8 +280,12 @@ fn test_dpe_validation_illegal_state() {
 fn test_dpe_validation_used_context_threshold_exceeded() {
     let mut model = run_rt_test(Some(&MBOX), None, None);
 
+    let mut resp_bytes = MboxBuffer::default();
     // read DPE after RT initialization
-    let dpe_resp = model.mailbox_execute(0xA000_0000, &[]).unwrap().unwrap();
+    let dpe_resp = model
+        .mailbox_execute(0xA000_0000, &[], &mut resp_bytes)
+        .unwrap()
+        .unwrap();
     let mut dpe = DpeInstance::read_from(dpe_resp.as_bytes()).unwrap();
 
     // corrupt DPE structure by creating PL0_DPE_ACTIVE_CONTEXT_THRESHOLD contexts
@@ -254,8 +306,9 @@ fn test_dpe_validation_used_context_threshold_exceeded() {
             TciMeasurement([idx as u8; DPE_PROFILE.get_tci_size()]);
         dpe.contexts[idx].handle = ContextHandle([idx as u8; ContextHandle::SIZE]);
     }
+    let mut resp_bytes = MboxBuffer::default();
     let _ = model
-        .mailbox_execute(0xB000_0000, dpe.as_bytes())
+        .mailbox_execute(0xB000_0000, dpe.as_bytes(), &mut resp_bytes)
         .unwrap()
         .unwrap();
 
@@ -270,8 +323,13 @@ fn test_dpe_validation_used_context_threshold_exceeded() {
     let payload = MailboxReqHeader {
         chksum: caliptra_common::checksum::calc_checksum(u32::from(CommandId::FW_INFO), &[]),
     };
+    let mut resp_bytes = MboxBuffer::default();
     let resp = model
-        .mailbox_execute(u32::from(CommandId::FW_INFO), payload.as_bytes())
+        .mailbox_execute(
+            u32::from(CommandId::FW_INFO),
+            payload.as_bytes(),
+            &mut resp_bytes,
+        )
         .unwrap()
         .unwrap();
     let info = FwInfoResp::read_from(resp.as_slice()).unwrap();
@@ -292,10 +350,12 @@ fn test_pcr_reset_counter_persistence() {
         index: 0,
     });
     cmd.populate_chksum().unwrap();
+    let mut resp_bytes = MboxBuffer::default();
     let _ = model
         .mailbox_execute(
             u32::from(CommandId::INCREMENT_PCR_RESET_COUNTER),
             cmd.as_bytes().unwrap(),
+            &mut resp_bytes,
         )
         .unwrap()
         .expect("We expected a response");
@@ -303,14 +363,22 @@ fn test_pcr_reset_counter_persistence() {
     // trigger update reset
     update_fw(&mut model, &MBOX, ImageOptions::default());
 
-    let pcr_reset_counter_resp_1 = model.mailbox_execute(0xC000_0000, &[]).unwrap().unwrap();
+    let mut resp_bytes = MboxBuffer::default();
+    let pcr_reset_counter_resp_1 = model
+        .mailbox_execute(0xC000_0000, &[], &mut resp_bytes)
+        .unwrap()
+        .unwrap();
     let pcr_reset_counter_1: [u8; size_of::<PcrResetCounter>()] =
         pcr_reset_counter_resp_1.as_bytes().try_into().unwrap();
 
     // trigger another update reset with same fw
     update_fw(&mut model, &MBOX, ImageOptions::default());
 
-    let pcr_reset_counter_resp_2 = model.mailbox_execute(0xC000_0000, &[]).unwrap().unwrap();
+    let mut resp_bytes = MboxBuffer::default();
+    let pcr_reset_counter_resp_2 = model
+        .mailbox_execute(0xC000_0000, &[], &mut resp_bytes)
+        .unwrap()
+        .unwrap();
     let pcr_reset_counter_2: [u8; size_of::<PcrResetCounter>()] =
         pcr_reset_counter_resp_2.as_bytes().try_into().unwrap();
 

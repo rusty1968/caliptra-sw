@@ -3,6 +3,7 @@
 use crate::common::{execute_dpe_cmd, generate_test_x509_cert, run_rt_test, DpeResult};
 use caliptra_common::mailbox_api::{CommandId, MailboxReq, MailboxReqHeader, PopulateIdevCertReq};
 use caliptra_error::CaliptraError;
+use caliptra_hw_model::MboxBuffer;
 use caliptra_hw_model::{DefaultHwModel, HwModel, SocManager};
 use caliptra_runtime::RtBootStatus;
 use dpe::{
@@ -96,10 +97,12 @@ fn test_populate_idev_cert_cmd() {
     pop_idev_cmd.populate_chksum().unwrap();
 
     // call populate idev cert so that the idev cert is added to the certificate chain
+    let mut resp_bytes = MboxBuffer::default();
     model
         .mailbox_execute(
             u32::from(CommandId::POPULATE_IDEV_CERT),
             pop_idev_cmd.as_bytes().unwrap(),
+            &mut resp_bytes,
         )
         .unwrap()
         .expect("We should have received a response");

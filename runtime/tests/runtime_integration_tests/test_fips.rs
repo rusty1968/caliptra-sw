@@ -5,6 +5,7 @@ use caliptra_builder::{version, ImageOptions};
 use caliptra_common::mailbox_api::{
     CommandId, FipsVersionResp, MailboxReqHeader, MailboxRespHeader,
 };
+use caliptra_hw_model::MboxBuffer;
 use caliptra_hw_model::{HwModel, SocManager};
 use caliptra_runtime::FipsVersionCmd;
 use zerocopy::{AsBytes, FromBytes};
@@ -30,8 +31,13 @@ fn test_fips_version() {
         chksum: caliptra_common::checksum::calc_checksum(u32::from(CommandId::VERSION), &[]),
     };
 
+    let mut resp_bytes = MboxBuffer::default();
     let fips_version_resp = model
-        .mailbox_execute(u32::from(CommandId::VERSION), payload.as_bytes())
+        .mailbox_execute(
+            u32::from(CommandId::VERSION),
+            payload.as_bytes(),
+            &mut resp_bytes,
+        )
         .unwrap()
         .unwrap();
 
@@ -80,8 +86,13 @@ fn test_fips_shutdown() {
         chksum: caliptra_common::checksum::calc_checksum(u32::from(CommandId::SHUTDOWN), &[]),
     };
 
+    let mut resp_bytes = MboxBuffer::default();
     let resp = model
-        .mailbox_execute(u32::from(CommandId::SHUTDOWN), payload.as_bytes())
+        .mailbox_execute(
+            u32::from(CommandId::SHUTDOWN),
+            payload.as_bytes(),
+            &mut resp_bytes,
+        )
         .unwrap()
         .unwrap();
 
@@ -98,8 +109,14 @@ fn test_fips_shutdown() {
     let payload = MailboxReqHeader {
         chksum: caliptra_common::checksum::calc_checksum(u32::from(CommandId::VERSION), &[]),
     };
+
+    let mut resp_bytes = MboxBuffer::default();
     let resp = model
-        .mailbox_execute(u32::from(CommandId::VERSION), payload.as_bytes())
+        .mailbox_execute(
+            u32::from(CommandId::VERSION),
+            payload.as_bytes(),
+            &mut resp_bytes,
+        )
         .unwrap_err();
     assert_error(
         &mut model,

@@ -4,7 +4,8 @@ use crate::common::{assert_error, execute_dpe_cmd, run_rt_test, DpeResult};
 use caliptra_common::mailbox_api::{
     CommandId, GetTaggedTciReq, GetTaggedTciResp, MailboxReq, MailboxReqHeader, TagTciReq,
 };
-use caliptra_hw_model::HwModel;
+use caliptra_hw_model::{HwModel, MboxBuffer};
+use caliptra_registers::mbox::enums::selector::MboxFsmESelector;
 use dpe::{
     commands::{Command, DeriveContextCmd, DeriveContextFlags, DestroyCtxCmd},
     context::ContextHandle,
@@ -29,8 +30,14 @@ fn test_tagging_default_context() {
         tag: TAG,
     });
     cmd.populate_chksum().unwrap();
+
+    let mut resp_bytes = MboxBuffer::default();
     let _ = model
-        .mailbox_execute(u32::from(CommandId::DPE_TAG_TCI), cmd.as_bytes().unwrap())
+        .mailbox_execute(
+            u32::from(CommandId::DPE_TAG_TCI),
+            cmd.as_bytes().unwrap(),
+            &mut resp_bytes,
+        )
         .unwrap()
         .expect("We expected a response");
 
@@ -40,10 +47,12 @@ fn test_tagging_default_context() {
         tag: TAG,
     });
     cmd.populate_chksum().unwrap();
+    let mut resp_bytes = MboxBuffer::default();
     let resp = model
         .mailbox_execute(
             u32::from(CommandId::DPE_GET_TAGGED_TCI),
             cmd.as_bytes().unwrap(),
+            &mut resp_bytes,
         )
         .unwrap()
         .expect("We expected a response");
@@ -61,8 +70,13 @@ fn test_tagging_a_tagged_context() {
         tag: TAG,
     });
     cmd.populate_chksum().unwrap();
+    let mut resp_bytes = MboxBuffer::default();
     let _ = model
-        .mailbox_execute(u32::from(CommandId::DPE_TAG_TCI), cmd.as_bytes().unwrap())
+        .mailbox_execute(
+            u32::from(CommandId::DPE_TAG_TCI),
+            cmd.as_bytes().unwrap(),
+            &mut resp_bytes,
+        )
         .unwrap()
         .expect("We expected a response");
 
@@ -73,8 +87,14 @@ fn test_tagging_a_tagged_context() {
         tag: INVALID_TAG,
     });
     cmd.populate_chksum().unwrap();
+
+    let mut resp_bytes = MboxBuffer::default();
     let resp = model
-        .mailbox_execute(u32::from(CommandId::DPE_TAG_TCI), cmd.as_bytes().unwrap())
+        .mailbox_execute(
+            u32::from(CommandId::DPE_TAG_TCI),
+            cmd.as_bytes().unwrap(),
+            &mut resp_bytes,
+        )
         .unwrap_err();
     assert_error(
         &mut model,
@@ -94,8 +114,13 @@ fn test_duplicate_tag() {
         tag: TAG,
     });
     cmd.populate_chksum().unwrap();
+    let mut resp_bytes = MboxBuffer::default();
     let _ = model
-        .mailbox_execute(u32::from(CommandId::DPE_TAG_TCI), cmd.as_bytes().unwrap())
+        .mailbox_execute(
+            u32::from(CommandId::DPE_TAG_TCI),
+            cmd.as_bytes().unwrap(),
+            &mut resp_bytes,
+        )
         .unwrap()
         .expect("We expected a response");
 
@@ -106,8 +131,13 @@ fn test_duplicate_tag() {
         tag: TAG,
     });
     cmd.populate_chksum().unwrap();
+    let mut resp_bytes = MboxBuffer::default();
     let resp = model
-        .mailbox_execute(u32::from(CommandId::DPE_TAG_TCI), cmd.as_bytes().unwrap())
+        .mailbox_execute(
+            u32::from(CommandId::DPE_TAG_TCI),
+            cmd.as_bytes().unwrap(),
+            &mut resp_bytes,
+        )
         .unwrap_err();
     assert_error(
         &mut model,
@@ -126,10 +156,12 @@ fn test_get_tagged_tci_on_non_existent_tag() {
         tag: INVALID_TAG,
     });
     cmd.populate_chksum().unwrap();
+    let mut resp_bytes = MboxBuffer::default();
     let resp = model
         .mailbox_execute(
             u32::from(CommandId::DPE_GET_TAGGED_TCI),
             cmd.as_bytes().unwrap(),
+            &mut resp_bytes,
         )
         .unwrap_err();
     assert_error(
@@ -150,8 +182,13 @@ fn test_tagging_inactive_context() {
         tag: TAG,
     });
     cmd.populate_chksum().unwrap();
+    let mut resp_bytes = MboxBuffer::default();
     let resp = model
-        .mailbox_execute(u32::from(CommandId::DPE_TAG_TCI), cmd.as_bytes().unwrap())
+        .mailbox_execute(
+            u32::from(CommandId::DPE_TAG_TCI),
+            cmd.as_bytes().unwrap(),
+            &mut resp_bytes,
+        )
         .unwrap_err();
     assert_error(
         &mut model,
@@ -171,8 +208,13 @@ fn test_tagging_destroyed_context() {
         tag: TAG,
     });
     cmd.populate_chksum().unwrap();
+    let mut resp_bytes = MboxBuffer::default();
     let _ = model
-        .mailbox_execute(u32::from(CommandId::DPE_TAG_TCI), cmd.as_bytes().unwrap())
+        .mailbox_execute(
+            u32::from(CommandId::DPE_TAG_TCI),
+            cmd.as_bytes().unwrap(),
+            &mut resp_bytes,
+        )
         .unwrap()
         .expect("We expected a response");
 
@@ -195,10 +237,12 @@ fn test_tagging_destroyed_context() {
         tag: TAG,
     });
     cmd.populate_chksum().unwrap();
+    let mut resp_bytes = MboxBuffer::default();
     let resp = model
         .mailbox_execute(
             u32::from(CommandId::DPE_GET_TAGGED_TCI),
             cmd.as_bytes().unwrap(),
+            &mut resp_bytes,
         )
         .unwrap_err();
     assert_error(
@@ -237,8 +281,13 @@ fn test_tagging_retired_context() {
         tag: TAG,
     });
     cmd.populate_chksum().unwrap();
+    let mut resp_bytes = MboxBuffer::default();
     let resp = model
-        .mailbox_execute(u32::from(CommandId::DPE_TAG_TCI), cmd.as_bytes().unwrap())
+        .mailbox_execute(
+            u32::from(CommandId::DPE_TAG_TCI),
+            cmd.as_bytes().unwrap(),
+            &mut resp_bytes,
+        )
         .unwrap_err();
     assert_error(
         &mut model,
@@ -253,8 +302,14 @@ fn test_tagging_retired_context() {
         tag: TAG,
     });
     cmd.populate_chksum().unwrap();
+
+    let mut resp_bytes = MboxBuffer::default();
     let _ = model
-        .mailbox_execute(u32::from(CommandId::DPE_TAG_TCI), cmd.as_bytes().unwrap())
+        .mailbox_execute(
+            u32::from(CommandId::DPE_TAG_TCI),
+            cmd.as_bytes().unwrap(),
+            &mut resp_bytes,
+        )
         .unwrap()
         .expect("We expected a response");
 
@@ -281,10 +336,12 @@ fn test_tagging_retired_context() {
         tag: TAG,
     });
     cmd.populate_chksum().unwrap();
+    let mut resp_bytes = MboxBuffer::default();
     let resp = model
         .mailbox_execute(
             u32::from(CommandId::DPE_GET_TAGGED_TCI),
             cmd.as_bytes().unwrap(),
+            &mut resp_bytes,
         )
         .unwrap()
         .expect("We expected a response");

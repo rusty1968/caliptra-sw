@@ -10,6 +10,7 @@ use caliptra_common::mailbox_api::{
     GetRtAliasCertResp, MailboxReq, MailboxReqHeader,
 };
 use caliptra_error::CaliptraError;
+use caliptra_hw_model::MboxBuffer;
 use caliptra_hw_model::{DefaultHwModel, HwModel};
 use dpe::{
     commands::{CertifyKeyCmd, CertifyKeyFlags, Command},
@@ -65,8 +66,13 @@ fn test_rt_cert_with_custom_dates() {
             &[],
         ),
     };
+    let mut resp_bytes = MboxBuffer::default();
     let resp = model
-        .mailbox_execute(u32::from(CommandId::GET_RT_ALIAS_CERT), payload.as_bytes())
+        .mailbox_execute(
+            u32::from(CommandId::GET_RT_ALIAS_CERT),
+            payload.as_bytes(),
+            &mut resp_bytes,
+        )
         .unwrap()
         .unwrap();
     assert!(resp.len() <= std::mem::size_of::<GetRtAliasCertResp>());
@@ -119,8 +125,13 @@ fn test_idev_id_cert() {
     });
     cmd.populate_chksum().unwrap();
 
+    let mut resp_bytes = MboxBuffer::default();
     let resp = model
-        .mailbox_execute(u32::from(CommandId::GET_IDEV_CERT), cmd.as_bytes().unwrap())
+        .mailbox_execute(
+            u32::from(CommandId::GET_IDEV_CERT),
+            cmd.as_bytes().unwrap(),
+            &mut resp_bytes,
+        )
         .unwrap()
         .expect("We expected a response");
 
@@ -159,8 +170,14 @@ fn get_ldev_cert(model: &mut DefaultHwModel) -> GetLdevCertResp {
     let payload = MailboxReqHeader {
         chksum: caliptra_common::checksum::calc_checksum(u32::from(CommandId::GET_LDEV_CERT), &[]),
     };
+
+    let mut resp_bytes = MboxBuffer::default();
     let resp = model
-        .mailbox_execute(u32::from(CommandId::GET_LDEV_CERT), payload.as_bytes())
+        .mailbox_execute(
+            u32::from(CommandId::GET_LDEV_CERT),
+            payload.as_bytes(),
+            &mut resp_bytes,
+        )
         .unwrap()
         .unwrap();
     assert!(resp.len() <= std::mem::size_of::<GetLdevCertResp>());
@@ -180,8 +197,14 @@ fn test_ldev_cert() {
     let payload = MailboxReqHeader {
         chksum: caliptra_common::checksum::calc_checksum(u32::from(CommandId::GET_IDEV_INFO), &[]),
     };
+
+    let mut resp_bytes = MboxBuffer::default();
     let resp = model
-        .mailbox_execute(u32::from(CommandId::GET_IDEV_INFO), payload.as_bytes())
+        .mailbox_execute(
+            u32::from(CommandId::GET_IDEV_INFO),
+            payload.as_bytes(),
+            &mut resp_bytes,
+        )
         .unwrap()
         .unwrap();
     let idev_resp = GetIdevInfoResp::read_from(resp.as_slice()).unwrap();

@@ -792,8 +792,8 @@ pub trait HwModel: SocManager {
     /// without data, Err(ModelError::MailboxCmdFailed) if the microcontroller
     /// responded with an error, or other model errors if there was a problem
     /// communicating with the mailbox.
-    fn mailbox_execute<'m, 'r>(
-        &'m mut self,
+    fn mailbox_execute<'r>(
+        &mut self,
         cmd: u32,
         buf: &[u8],
         resp_data: &'r mut MboxBuffer,
@@ -804,8 +804,8 @@ pub trait HwModel: SocManager {
     }
 
     /// Wait for the response to a previous call to `start_mailbox_execute()`.
-    fn finish_mailbox_execute<'m, 'r>(
-        &'m mut self,
+    fn finish_mailbox_execute<'r>(
+        &mut self,
         resp_data: &'r mut MboxBuffer,
     ) -> std::result::Result<Option<&'r MboxBuffer>, ModelError> {
         // Wait for the microcontroller to finish executing

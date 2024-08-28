@@ -930,7 +930,7 @@ pub struct MboxBuffer {
     pub data: ArrayVec<u8, { Self::MAX_SIZE }>,
 }
 impl MboxBuffer {
-    const MAX_SIZE: usize = 2048;
+    const MAX_SIZE: usize = 4096;
 }
 
 impl Deref for MboxBuffer {

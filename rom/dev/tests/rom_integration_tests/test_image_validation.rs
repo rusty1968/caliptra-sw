@@ -1887,7 +1887,7 @@ fn cert_test_with_custom_dates() {
     let output = String::from_utf8_lossy(&output);
 
     // Get the idevid cert.
-    let idevid_cert = idevid_cert(&idevid_cert_bytes);
+    let idevid_cert = idevid_cert(idevid_cert_bytes);
 
     // Get the ldevid cert.
     let ldevid_cert = ldevid_cert(&idevid_cert, &output);
@@ -1949,7 +1949,7 @@ fn cert_test() {
     let output = String::from_utf8_lossy(&output);
 
     // Get the idevid cert.
-    let idevid_cert = idevid_cert(&csr_bytes);
+    let idevid_cert = idevid_cert(csr_bytes);
 
     // Get the ldevid cert.
     let ldevid_cert = ldevid_cert(&idevid_cert, &output);

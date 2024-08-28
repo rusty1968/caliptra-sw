@@ -1,7 +1,7 @@
 // Licensed under the Apache-2.0 license
 
 use caliptra_common::mailbox_api::{CommandId, MailboxReqHeader};
-use caliptra_hw_model::{HwModel, SocManager};
+use caliptra_hw_model::{HwModel, MboxBuffer, SocManager};
 use zerocopy::AsBytes;
 
 use crate::common::{assert_error, run_rt_test};
@@ -15,7 +15,10 @@ fn test_error_cleared() {
     model.step_until(|m| m.soc_mbox().status().read().mbox_fsm_ps().mbox_idle());
 
     // Send invalid command to cause failure
-    let resp = model.mailbox_execute(0xffffffff, &[]).unwrap_err();
+    let mut resp_bytes = MboxBuffer::default();
+    let resp = model
+        .mailbox_execute(0xffffffff, &[], &mut resp_bytes)
+        .unwrap_err();
     assert_error(
         &mut model,
         caliptra_drivers::CaliptraError::RUNTIME_MAILBOX_INVALID_PARAMS,
@@ -26,8 +29,13 @@ fn test_error_cleared() {
     let payload = MailboxReqHeader {
         chksum: caliptra_common::checksum::calc_checksum(u32::from(CommandId::VERSION), &[]),
     };
+    let mut resp_bytes = MboxBuffer::default();
     let _ = model
-        .mailbox_execute(u32::from(CommandId::VERSION), payload.as_bytes())
+        .mailbox_execute(
+            u32::from(CommandId::VERSION),
+            payload.as_bytes(),
+            &mut resp_bytes,
+        )
         .unwrap()
         .unwrap();
 
@@ -46,8 +54,9 @@ fn test_unimplemented_cmds() {
         chksum: caliptra_common::checksum::calc_checksum(INVALID_CMD, &[]),
     };
 
+    let mut resp_bytes = MboxBuffer::default();
     let resp = model
-        .mailbox_execute(INVALID_CMD, payload.as_bytes())
+        .mailbox_execute(INVALID_CMD, payload.as_bytes(), &mut resp_bytes)
         .unwrap_err();
     assert_error(
         &mut model,

@@ -8,7 +8,9 @@ use caliptra_common::mailbox_api::{
     MailboxReqHeader,
 };
 use caliptra_error::CaliptraError;
-use caliptra_hw_model::{BootParams, DefaultHwModel, HwModel, InitParams, ModelError, SocManager};
+use caliptra_hw_model::{
+    BootParams, DefaultHwModel, HwModel, InitParams, MboxBuffer, ModelError, SocManager,
+};
 use dpe::{
     commands::{Command, CommandHdr},
     response::{
@@ -180,9 +182,11 @@ pub fn execute_dpe_cmd(
     });
     mbox_cmd.populate_chksum().unwrap();
 
+    let mut buffer = MboxBuffer::default();
     let resp = model.mailbox_execute(
         u32::from(CommandId::INVOKE_DPE),
         mbox_cmd.as_bytes().unwrap(),
+        &mut buffer,
     );
     if let DpeResult::MboxCmdFailure(expected_err) = expected_result {
         assert_error(model, expected_err, resp.unwrap_err());
@@ -231,8 +235,14 @@ pub fn get_fmc_alias_cert(model: &mut DefaultHwModel) -> GetFmcAliasCertResp {
             &[],
         ),
     };
+
+    let mut buffer = MboxBuffer::default();
     let resp = model
-        .mailbox_execute(u32::from(CommandId::GET_FMC_ALIAS_CERT), payload.as_bytes())
+        .mailbox_execute(
+            u32::from(CommandId::GET_FMC_ALIAS_CERT),
+            payload.as_bytes(),
+            &mut buffer,
+        )
         .unwrap()
         .unwrap();
     assert!(resp.len() <= std::mem::size_of::<GetFmcAliasCertResp>());
@@ -248,8 +258,13 @@ pub fn get_rt_alias_cert(model: &mut DefaultHwModel) -> GetRtAliasCertResp {
             &[],
         ),
     };
+    let mut buffer = MboxBuffer::default();
     let resp = model
-        .mailbox_execute(u32::from(CommandId::GET_RT_ALIAS_CERT), payload.as_bytes())
+        .mailbox_execute(
+            u32::from(CommandId::GET_RT_ALIAS_CERT),
+            payload.as_bytes(),
+            &mut buffer,
+        )
         .unwrap()
         .unwrap();
     assert!(resp.len() <= std::mem::size_of::<GetRtAliasCertResp>());

@@ -195,7 +195,7 @@ fn test_pcr_log() {
     let anti_rollback_disable = hw.soc_ifc().fuse_anti_rollback_disable().read().dis();
 
     check_pcr_log_entry(
-        &pcr_entry_arr,
+        pcr_entry_arr,
         0,
         PcrLogEntryId::DeviceStatus,
         PCR0_AND_PCR1_EXTENDED_ID,
@@ -213,7 +213,7 @@ fn test_pcr_log() {
     );
 
     check_pcr_log_entry(
-        &pcr_entry_arr,
+        pcr_entry_arr,
         1,
         PcrLogEntryId::VendorPubKeyHash,
         PCR0_AND_PCR1_EXTENDED_ID,
@@ -221,7 +221,7 @@ fn test_pcr_log() {
     );
 
     check_pcr_log_entry(
-        &pcr_entry_arr,
+        pcr_entry_arr,
         2,
         PcrLogEntryId::OwnerPubKeyHash,
         PCR0_AND_PCR1_EXTENDED_ID,
@@ -229,7 +229,7 @@ fn test_pcr_log() {
     );
 
     check_pcr_log_entry(
-        &pcr_entry_arr,
+        pcr_entry_arr,
         3,
         PcrLogEntryId::FmcTci,
         PCR0_AND_PCR1_EXTENDED_ID,
@@ -301,7 +301,7 @@ fn test_pcr_log_no_owner_key_digest_fuse() {
     let anti_rollback_disable = hw.soc_ifc().fuse_anti_rollback_disable().read().dis();
 
     check_pcr_log_entry(
-        &pcr_entry_arr,
+        pcr_entry_arr,
         0,
         PcrLogEntryId::DeviceStatus,
         PCR0_AND_PCR1_EXTENDED_ID,
@@ -319,7 +319,7 @@ fn test_pcr_log_no_owner_key_digest_fuse() {
     );
 
     check_pcr_log_entry(
-        &pcr_entry_arr,
+        pcr_entry_arr,
         2,
         PcrLogEntryId::OwnerPubKeyHash,
         PCR0_AND_PCR1_EXTENDED_ID,
@@ -398,7 +398,7 @@ fn test_pcr_log_fmc_fuse_svn() {
     let anti_rollback_disable = hw.soc_ifc().fuse_anti_rollback_disable().read().dis();
 
     check_pcr_log_entry(
-        &pcr_entry_arr,
+        pcr_entry_arr,
         0,
         PcrLogEntryId::DeviceStatus,
         PCR0_AND_PCR1_EXTENDED_ID,
@@ -547,8 +547,8 @@ fn test_pcr_log_across_update_reset() {
     helpers::change_dword_endianess(&mut pcr0_from_hw);
     helpers::change_dword_endianess(&mut pcr1_from_hw);
 
-    let pcr0_from_log = hash_pcr_log_entries(&[0; 48], &pcr_entry_arr, PcrId::PcrId0);
-    let pcr1_from_log = hash_pcr_log_entries(&[0; 48], &pcr_entry_arr, PcrId::PcrId1);
+    let pcr0_from_log = hash_pcr_log_entries(&[0; 48], pcr_entry_arr, PcrId::PcrId0);
+    let pcr1_from_log = hash_pcr_log_entries(&[0; 48], pcr_entry_arr, PcrId::PcrId1);
 
     assert_eq!(pcr0_from_log, pcr0_from_hw);
     assert_eq!(pcr1_from_log, pcr1_from_hw);
@@ -586,8 +586,8 @@ fn test_pcr_log_across_update_reset() {
     helpers::change_dword_endianess(&mut new_pcr0_from_hw);
     helpers::change_dword_endianess(&mut new_pcr1_from_hw);
 
-    let new_pcr0_from_log = hash_pcr_log_entries(&[0; 48], &pcr_entry_arr, PcrId::PcrId0);
-    let new_pcr1_from_log = hash_pcr_log_entries(&pcr1_from_log, &pcr_entry_arr, PcrId::PcrId1);
+    let new_pcr0_from_log = hash_pcr_log_entries(&[0; 48], pcr_entry_arr, PcrId::PcrId0);
+    let new_pcr1_from_log = hash_pcr_log_entries(&pcr1_from_log, pcr_entry_arr, PcrId::PcrId1);
 
     assert_eq!(new_pcr0_from_log, new_pcr0_from_hw);
     assert_eq!(new_pcr1_from_log, new_pcr1_from_hw);
@@ -959,7 +959,7 @@ fn test_upload_single_measurement() {
         .unwrap();
 
     assert_eq!(measurement_log.len(), MEASUREMENT_ENTRY_SIZE);
-    check_measurement_log_entry(&measurement_log, 0, &measurement);
+    check_measurement_log_entry(measurement_log, 0, &measurement);
 
     // Get PCR31
     let mut buffer = MboxBuffer::default();
@@ -969,7 +969,7 @@ fn test_upload_single_measurement() {
         .unwrap();
 
     // Check that the measurement was extended to PCR31.
-    let expected_pcr = hash_measurement_log_entries(&measurement_log);
+    let expected_pcr = hash_measurement_log_entries(measurement_log);
     assert_eq!(pcr31.as_bytes(), expected_pcr);
 
     let mut buffer = MboxBuffer::default();
@@ -1051,7 +1051,7 @@ fn test_upload_measurement_limit() {
         measurement.measurement[0] = idx;
         measurement.context[1] = idx;
         measurement.svn = idx as u32;
-        check_measurement_log_entry(&measurement_log, idx as usize, &measurement);
+        check_measurement_log_entry(measurement_log, idx as usize, &measurement);
     }
 
     // Get PCR31
@@ -1062,7 +1062,7 @@ fn test_upload_measurement_limit() {
         .unwrap();
 
     // Check that the measurement was extended to PCR31.
-    let expected_pcr = hash_measurement_log_entries(&measurement_log);
+    let expected_pcr = hash_measurement_log_entries(measurement_log);
     assert_eq!(pcr31.as_bytes(), expected_pcr);
 
     let mut buffer = MboxBuffer::default();

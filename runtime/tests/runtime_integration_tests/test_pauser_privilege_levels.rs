@@ -10,7 +10,9 @@ use caliptra_common::mailbox_api::{
     PopulateIdevCertReq, StashMeasurementReq,
 };
 use caliptra_error::CaliptraError;
-use caliptra_hw_model::{BootParams, Fuses, HwModel, InitParams, SecurityState, SocManager};
+use caliptra_hw_model::{
+    BootParams, Fuses, HwModel, InitParams, MboxBuffer, SecurityState, SocManager,
+};
 use caliptra_image_crypto::OsslCrypto as Crypto;
 use caliptra_image_elf::ElfExecutable;
 use caliptra_image_gen::{ImageGenerator, ImageGeneratorConfig};
@@ -252,10 +254,12 @@ fn test_populate_idev_cannot_be_called_from_pl1() {
     let mut pop_idev_cmd = MailboxReq::PopulateIdevCert(PopulateIdevCertReq::default());
     pop_idev_cmd.populate_chksum().unwrap();
 
+    let mut resp_bytes = MboxBuffer::default();
     let resp = model
         .mailbox_execute(
             u32::from(CommandId::POPULATE_IDEV_CERT),
             pop_idev_cmd.as_bytes().unwrap(),
+            &mut resp_bytes,
         )
         .unwrap_err();
     assert_error(
@@ -308,10 +312,12 @@ fn test_certify_key_extended_cannot_be_called_from_pl1() {
     });
     certify_key_extended_cmd.populate_chksum().unwrap();
 
+    let mut resp_bytes = MboxBuffer::default();
     let resp = model
         .mailbox_execute(
             u32::from(CommandId::CERTIFY_KEY_EXTENDED),
             certify_key_extended_cmd.as_bytes().unwrap(),
+            &mut resp_bytes,
         )
         .unwrap_err();
     assert_error(
@@ -379,11 +385,13 @@ fn test_stash_measurement_pl_context_thresholds() {
         });
         cmd.populate_chksum().unwrap();
 
+        let mut resp_bytes = MboxBuffer::default();
         if i == num_iterations - 1 {
             let resp = model
                 .mailbox_execute(
                     u32::from(CommandId::STASH_MEASUREMENT),
                     cmd.as_bytes().unwrap(),
+                    &mut resp_bytes,
                 )
                 .unwrap_err();
             assert_error(
@@ -395,10 +403,12 @@ fn test_stash_measurement_pl_context_thresholds() {
             break;
         }
 
+        let mut resp_bytes = MboxBuffer::default();
         let _ = model
             .mailbox_execute(
                 u32::from(CommandId::STASH_MEASUREMENT),
                 cmd.as_bytes().unwrap(),
+                &mut resp_bytes,
             )
             .unwrap()
             .expect("We should have received a response");
