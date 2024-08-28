@@ -81,8 +81,6 @@ pub type DefaultHwModel = ModelVerilated;
 #[cfg(feature = "fpga_realtime")]
 pub type DefaultHwModel = ModelFpgaRealtime;
 
-
-
 /// Constructs an HwModel based on the cargo features and environment
 /// variables. Most test cases that need to construct a HwModel should use this
 /// function over HwModel::new_unbooted().
@@ -398,13 +396,9 @@ pub struct MailboxRecvTxn<'m, 'r, TModel: HwModel> {
 
 impl<'m, 'r, Model: HwModel> MailboxRecvTxn<'m, 'r, Model> {
     pub fn new(model: &'m mut Model, req: MailboxRequest<'r>) -> Self {
-        crate::MailboxRecvTxn {
-            model,
-            req
-        }
+        crate::MailboxRecvTxn { model, req }
     }
 }
-
 
 impl<'m, 'r, Model: HwModel> MailboxRecvTxn<'m, 'r, Model> {
     pub fn respond_success(self) {
@@ -806,9 +800,7 @@ pub trait HwModel: SocManager {
     ) -> std::result::Result<Option<usize>, ModelError> {
         self.start_mailbox_execute(cmd, buf)
             .map_err(ModelError::CaliptraApiError)?;
-        let res = self.finish_mailbox_execute(resp_data)?;
-        dbg!(res.clone());
-        Ok(res)
+        self.finish_mailbox_execute(resp_data)
     }
 
     /// Wait for the response to a previous call to `start_mailbox_execute()`.
@@ -1010,7 +1002,6 @@ pub trait HwModel: SocManager {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use crate::{
@@ -1025,9 +1016,9 @@ mod tests {
     use caliptra_emu_bus::Bus;
     use caliptra_emu_types::RvSize;
     use caliptra_hw_model::SocManager;
+    use caliptra_registers::mbox::enums::MboxStatusE;
     use caliptra_registers::soc_ifc;
     use zerocopy::{AsBytes, FromBytes};
-    use caliptra_registers::mbox::enums::MboxStatusE;
 
     use crate::{self as caliptra_hw_model, MailboxRecvTxn};
 
@@ -1262,9 +1253,9 @@ mod tests {
 
         let txn = crate::MailboxRecvTxn {
             model: &mut model,
-            req
+            req,
         };
-               
+
         txn.respond_success();
         model.step_until(|m| m.soc_ifc().cptra_fw_extended_error_info().at(0).read() != 0);
         assert_eq!(
