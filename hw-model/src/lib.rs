@@ -928,11 +928,11 @@ pub trait HwModel: SocManager {
 
     /// Upload firmware to the mailbox.
     fn upload_firmware(&mut self, firmware: &[u8]) -> Result<(), ModelError> {
-        //let response =
-        self.mailbox_execute(FW_LOAD_CMD_OPCODE, firmware, &mut MboxBuffer::default())?;
-        //        if response.is_some() {
-        //            return Err(ModelError::UploadFirmwareUnexpectedResponse);
-        //        }
+        let mut resp_bytes = MboxBuffer::default();
+        let response = self.mailbox_execute(FW_LOAD_CMD_OPCODE, firmware, &mut resp_bytes)?;
+        if response.is_some() {
+            return Err(ModelError::UploadFirmwareUnexpectedResponse);
+        }
         Ok(())
     }
 
@@ -1226,7 +1226,11 @@ mod tests {
         let empty_slice: &[u8] = &[];
         let mut response = MboxBuffer::default();
         assert_eq!(
-            model.mailbox_execute(0x1000_2000, &[], &mut response).unwrap().unwrap().as_slice(),
+            model
+                .mailbox_execute(0x1000_2000, &[], &mut response)
+                .unwrap()
+                .unwrap()
+                .as_slice(),
             empty_slice
         );
 

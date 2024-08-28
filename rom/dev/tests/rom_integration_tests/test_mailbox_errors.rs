@@ -85,7 +85,11 @@ fn test_mailbox_invalid_checksum() {
 
     let mut buffer = MboxBuffer::default();
     assert_eq!(
-        hw.mailbox_execute(CommandId::STASH_MEASUREMENT.into(), payload.as_bytes(), &mut buffer),
+        hw.mailbox_execute(
+            CommandId::STASH_MEASUREMENT.into(),
+            payload.as_bytes(),
+            &mut buffer
+        ),
         Err(ModelError::MailboxCmdFailed(
             CaliptraError::FW_PROC_MAILBOX_INVALID_CHECKSUM.into()
         ))
@@ -109,7 +113,11 @@ fn test_mailbox_invalid_req_size_large() {
     // Send too much data (stash measurement is bigger than capabilities)
     let mut buffer = MboxBuffer::default();
     assert_eq!(
-        hw.mailbox_execute(CommandId::CAPABILITIES.into(), payload.as_bytes(), &mut buffer),
+        hw.mailbox_execute(
+            CommandId::CAPABILITIES.into(),
+            payload.as_bytes(),
+            &mut buffer
+        ),
         Err(ModelError::MailboxCmdFailed(
             CaliptraError::FW_PROC_MAILBOX_INVALID_REQUEST_LENGTH.into()
         ))
@@ -149,7 +157,7 @@ fn test_mailbox_invalid_req_size_zero() {
     let (mut hw, _image_bundle) =
         helpers::build_hw_model_and_image_bundle(Fuses::default(), ImageOptions::default());
 
-    let mut buffer = MboxBuffer::default();    
+    let mut buffer = MboxBuffer::default();
     assert_eq!(
         hw.mailbox_execute(CommandId::CAPABILITIES.into(), &[], &mut buffer),
         Err(ModelError::MailboxCmdFailed(

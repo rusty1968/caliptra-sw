@@ -12,7 +12,8 @@ use caliptra_builder::{
 use caliptra_common::{mailbox_api::CommandId, RomBootStatus::*};
 use caliptra_drivers::{Array4x12, CaliptraError};
 use caliptra_hw_model::{
-    BootParams, DeviceLifecycle, Fuses, HwModel, InitParams, MboxBuffer, ModelError, SecurityState, SocManager
+    BootParams, DeviceLifecycle, Fuses, HwModel, InitParams, MboxBuffer, ModelError, SecurityState,
+    SocManager,
 };
 
 const PUB_KEY_X: [u8; 48] = [

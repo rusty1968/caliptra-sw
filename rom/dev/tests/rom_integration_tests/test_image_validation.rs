@@ -14,7 +14,8 @@ use caliptra_drivers::MfgFlags;
 use caliptra_drivers::{Array4x12, IdevidCertAttr};
 use caliptra_error::CaliptraError;
 use caliptra_hw_model::{
-    BootParams, DeviceLifecycle, Fuses, HwModel, InitParams, MboxBuffer, ModelError, SecurityState, SocManager, U4
+    BootParams, DeviceLifecycle, Fuses, HwModel, InitParams, MboxBuffer, ModelError, SecurityState,
+    SocManager, U4,
 };
 use caliptra_image_crypto::OsslCrypto as Crypto;
 use caliptra_image_elf::ElfExecutable;
@@ -2342,7 +2343,9 @@ fn test_max_fw_image() {
     buf.append(&mut image_bundle.runtime.to_vec());
 
     let mut buffer = MboxBuffer::default();
-    hw.mailbox_execute(0x1000_000E, &buf, &mut buffer).unwrap().unwrap();
+    hw.mailbox_execute(0x1000_000E, &buf, &mut buffer)
+        .unwrap()
+        .unwrap();
     let iccm_cmp = buffer.data.as_slice();
     assert_eq!(iccm_cmp.len(), 1);
     assert_eq!(iccm_cmp[0], 0);

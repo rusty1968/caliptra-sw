@@ -10,7 +10,7 @@ use ureg::MmioMut;
 
 use crate::CaliptraApiError;
 use arrayvec::ArrayVec;
-use core::ops::Deref;
+use core::ops::{Deref, DerefMut};
 
 #[derive(PartialEq, Eq)]
 pub struct CommandId(pub u32);
@@ -944,6 +944,13 @@ impl Deref for MboxBuffer {
     }
 }
 
+impl DerefMut for MboxBuffer {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.data
+    }
+}
+
+
 pub fn mbox_read_fifo(
     mbox: mbox::RegisterBlock<impl MmioMut>,
     buffer: &mut MboxBuffer,
@@ -951,7 +958,6 @@ pub fn mbox_read_fifo(
     let mut dlen = mbox.dlen().read();
     while dlen >= 4 {
         buffer
-            .data
             .try_extend_from_slice(&mbox.dataout().read().to_le_bytes())
             .map_err(|_| CaliptraApiError::UnableToReadMailbox)?;
         dlen -= 4;
@@ -959,7 +965,6 @@ pub fn mbox_read_fifo(
     if dlen > 0 {
         // Unwrap cannot panic because dlen is less than 4
         buffer
-            .data
             .try_extend_from_slice(
                 &mbox.dataout().read().to_le_bytes()[..usize::try_from(dlen).unwrap()],
             )

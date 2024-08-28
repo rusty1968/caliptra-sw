@@ -199,7 +199,7 @@ fn test_update_reset_verify_image_failure() {
     hw.step_until_boot_status(KatComplete.into(), true);
     hw.step_until_boot_status(UpdateResetStarted.into(), false);
 
-    let mut buffer= caliptra_hw_model::MboxBuffer::default();
+    let mut buffer = caliptra_hw_model::MboxBuffer::default();
     assert_eq!(
         hw.finish_mailbox_execute(&mut buffer),
         Err(caliptra_hw_model::ModelError::MailboxCmdFailed(
@@ -340,7 +340,7 @@ fn test_update_reset_vendor_ecc_pub_key_idx_dv_mismatch() {
     );
 
     // Exit test-fmc with success
-    let mut buffer = MboxBuffer::default(); 
+    let mut buffer = MboxBuffer::default();
     hw.mailbox_execute(0x1000_000C, &[], &mut buffer).unwrap();
 
     hw.step_until_exit_success().unwrap();
@@ -459,24 +459,33 @@ fn test_check_rom_update_reset_status_reg() {
         hw.step_until_boot_status(UpdateResetStarted.into(), false);
     }
 
-    assert_eq!(hw.finish_mailbox_execute(&mut MboxBuffer::default()), Ok(None));
+    assert_eq!(
+        hw.finish_mailbox_execute(&mut MboxBuffer::default()),
+        Ok(None)
+    );
 
     hw.step_until_boot_status(UpdateResetComplete.into(), true);
 
     let mut warmresetentry4_array = MboxBuffer::default();
-    hw.mailbox_execute(0x1000_000D, &[], &mut warmresetentry4_array).unwrap().unwrap();
+    hw.mailbox_execute(0x1000_000D, &[], &mut warmresetentry4_array)
+        .unwrap()
+        .unwrap();
     let mut warmresetentry4_offset = core::mem::size_of::<u32>() * 8; // Skip first four entries
 
     // Check RomUpdateResetStatus datavault value.
-    let warmresetentry4_id =
-        u32::read_from_prefix(warmresetentry4_array.data.as_slice()[warmresetentry4_offset..].as_bytes()).unwrap();
+    let warmresetentry4_id = u32::read_from_prefix(
+        warmresetentry4_array.data.as_slice()[warmresetentry4_offset..].as_bytes(),
+    )
+    .unwrap();
     assert_eq!(
         warmresetentry4_id,
         WarmResetEntry4::RomUpdateResetStatus as u32
     );
     warmresetentry4_offset += core::mem::size_of::<u32>();
-    let warmresetentry4_value =
-        u32::read_from_prefix(warmresetentry4_array.data.as_slice()[warmresetentry4_offset..].as_bytes()).unwrap();
+    let warmresetentry4_value = u32::read_from_prefix(
+        warmresetentry4_array.data.as_slice()[warmresetentry4_offset..].as_bytes(),
+    )
+    .unwrap();
     assert_eq!(warmresetentry4_value, u32::from(UpdateResetComplete));
 }
 
@@ -605,7 +614,9 @@ fn test_update_reset_max_fw_image() {
     buf.append(&mut updated_image_bundle.runtime.to_vec());
 
     let mut resp_buffer = MboxBuffer::default();
-    hw.mailbox_execute(0x1000_000E, &buf, &mut resp_buffer).unwrap().unwrap();
+    hw.mailbox_execute(0x1000_000E, &buf, &mut resp_buffer)
+        .unwrap()
+        .unwrap();
     assert_eq!(resp_buffer.data.len(), 1);
     assert_eq!(resp_buffer.data[0], 0);
 }
