@@ -4,11 +4,12 @@ use caliptra_api_types::{DeviceLifecycle, Fuses};
 use caliptra_builder::firmware::{APP_WITH_UART, FMC_WITH_UART};
 use caliptra_builder::{firmware, ImageOptions};
 use caliptra_common::mailbox_api::{
-    GetFmcAliasCertReq, GetLdevCertReq, GetRtAliasCertReq, ResponseVarSize,
+    GetFmcAliasCertReq, GetFmcAliasCertResp, GetLdevCertReq, GetLdevCertResp, GetRtAliasCertReq,
+    GetRtAliasCertResp, ResponseVarSize,
 };
 use caliptra_common::RomBootStatus;
-use caliptra_drivers::CaliptraError;
-use caliptra_hw_model::{BootParams, HwModel, InitParams, SecurityState, SocManager};
+use caliptra_drivers::{CaliptraError, MailboxRecvTxn};
+use caliptra_hw_model::{BootParams, HwModel, InitParams, MboxBuffer, SecurityState, SocManager};
 use caliptra_hw_model_types::{RandomEtrngResponses, RandomNibbles};
 use caliptra_test::derive::{PcrRtCurrentInput, RtAliasKey};
 use caliptra_test::{derive, redact_cert, run_test, RedactOpts, UnwrapSingle};
@@ -59,8 +60,10 @@ fn retrieve_csr_test() {
     )
     .unwrap();
 
-    let mut txn = hw.wait_for_mailbox_receive().unwrap();
-    let csr_der = mem::take(&mut txn.req.data);
+    let mut buffer = MboxBuffer::default();
+
+    let txn = caliptra_hw_model::wait_for_mailbox_receive(&mut hw, &mut buffer).unwrap();
+    let csr_der = txn.req.data.as_bytes();
     txn.respond_success();
 
     let csr = openssl::x509::X509Req::from_der(&csr_der).unwrap();
@@ -207,7 +210,10 @@ fn smoke_test() {
         );
     }
 
-    let ldev_cert_resp = hw.mailbox_execute_req(GetLdevCertReq::default()).unwrap();
+    let mut response = GetLdevCertResp::default();
+    let ldev_cert_resp = hw
+        .mailbox_execute_req(GetLdevCertReq::default(), &mut response)
+        .unwrap();
 
     // Extract the certificate from the response
     let ldev_cert_der = ldev_cert_resp.data().unwrap();
@@ -248,8 +254,9 @@ fn smoke_test() {
     println!("ldev-cert: {}", ldev_cert_txt);
 
     // Execute command
+    let mut response = GetFmcAliasCertResp::default();
     let fmc_alias_cert_resp = hw
-        .mailbox_execute_req(GetFmcAliasCertReq::default())
+        .mailbox_execute_req(GetFmcAliasCertReq::default(), &mut response)
         .unwrap();
 
     // Extract the certificate from the response
@@ -417,8 +424,9 @@ fn smoke_test() {
         );
     }
 
+    let mut response = GetRtAliasCertResp::default();
     let rt_alias_cert_resp = hw
-        .mailbox_execute_req(GetRtAliasCertReq::default())
+        .mailbox_execute_req(GetRtAliasCertReq::default(), &mut response)
         .unwrap();
 
     // Extract the certificate from the response
@@ -569,17 +577,23 @@ fn smoke_test() {
     hw.upload_firmware(&image2.to_bytes().unwrap()).unwrap();
 
     // Make sure the ldevid cert hasn't changed
-    let ldev_cert_resp2 = hw.mailbox_execute_req(GetLdevCertReq::default()).unwrap();
+    let mut resp_bytes = GetLdevCertResp::default();
+    let ldev_cert_resp2 = hw
+        .mailbox_execute_req(GetLdevCertReq::default(), &mut resp_bytes)
+        .unwrap();
     assert_eq!(ldev_cert_resp2.data(), ldev_cert_resp.data());
 
     // Make sure the fmcalias cert hasn't changed
+
+    let mut resp_bytes = GetFmcAliasCertResp::default();
     let fmc_alias_cert_resp2 = hw
-        .mailbox_execute_req(GetFmcAliasCertReq::default())
+        .mailbox_execute_req(GetFmcAliasCertReq::default(), &mut resp_bytes)
         .unwrap();
     assert_eq!(fmc_alias_cert_resp2.data(), fmc_alias_cert_resp.data());
 
+    let mut resp_bytes = GetRtAliasCertResp::default();
     let rt_alias_cert2_resp = hw
-        .mailbox_execute_req(GetRtAliasCertReq::default())
+        .mailbox_execute_req(GetRtAliasCertReq::default(), &mut resp_bytes)
         .unwrap();
 
     let rt_alias_cert2_der = rt_alias_cert2_resp.data().unwrap();

@@ -7,6 +7,10 @@ use caliptra_api::{mbox_read_fifo, mbox_write_fifo};
 use caliptra_api_types as api_types;
 use caliptra_registers::mbox::enums::{MboxFsmE, MboxStatusE};
 
+use caliptra_hw_model_types::{
+    ErrorInjectionMode, EtrngResponse, HexBytes, HexSlice, RandomEtrngResponses, RandomNibbles,
+    DEFAULT_CPTRA_OBF_KEY,
+};
 use std::mem;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -14,11 +18,6 @@ use std::{
     error::Error,
     fmt::Display,
     io::{stdout, ErrorKind, Write},
-};
-
-use caliptra_hw_model_types::{
-    ErrorInjectionMode, EtrngResponse, HexBytes, HexSlice, RandomEtrngResponses, RandomNibbles,
-    DEFAULT_CPTRA_OBF_KEY,
 };
 use zerocopy::{AsBytes, FromBytes, LayoutVerified, Unalign};
 
@@ -273,7 +272,6 @@ impl<'a> Default for BootParams<'a> {
 #[derive(Debug, Eq, PartialEq)]
 pub enum ModelError {
     MailboxCmdFailed(u32),
-    UnableToLockMailbox,
     BufferTooLargeForMailbox,
     UploadFirmwareUnexpectedResponse,
     UnknownCommandStatus(u32),
@@ -311,7 +309,6 @@ impl Display for ModelError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ModelError::MailboxCmdFailed(err) => write!(f, "Mailbox command failed. fw_err={err}"),
-            ModelError::UnableToLockMailbox => write!(f, "Unable to lock mailbox"),
             ModelError::BufferTooLargeForMailbox => write!(f, "Buffer too large for mailbox"),
             ModelError::UploadFirmwareUnexpectedResponse => {
                 write!(f, "Received unexpected response after uploading firmware")
@@ -728,11 +725,11 @@ pub trait HwModel: SocManager {
     /// Executes a typed request and (if success), returns the typed response.
     /// The checksum field of the request is calculated, and the checksum of the
     /// response is validated.
-    fn mailbox_execute_req<R: api::mailbox::Request>(
+    fn mailbox_execute_req<'a, R: api::mailbox::Request>(
         &mut self,
         mut req: R,
-        response: &mut R::Resp,
-    ) -> std::result::Result<(), ModelError> {
+        response: &'a mut R::Resp,
+    ) -> std::result::Result<&'a R::Resp, ModelError> {
         if mem::size_of::<R>() < mem::size_of::<MailboxReqHeader>() {
             return Err(ModelError::MailboxReqTypeTooSmall);
         }
@@ -784,7 +781,7 @@ pub trait HwModel: SocManager {
                 response_header.fips_status,
             ));
         }
-        Ok(())
+        Ok(response)
     }
 
     /// Executes `cmd` with request data `buf`. Returns `Ok(Some(_))` if
@@ -1000,6 +997,17 @@ pub trait HwModel: SocManager {
 
         Ok(())
     }
+}
+
+pub fn wait_for_mailbox_receive<'a, 'b, TModel: HwModel + SocManager>(
+    mut model: &'a mut TModel,
+    mut buffer: &'b mut MboxBuffer,
+) -> Result<MailboxRecvTxn<'a, 'b, TModel>, ModelError> {
+    let req: crate::MailboxRequest = model.wait_for_mailbox_receive(buffer)?;
+    Ok(crate::MailboxRecvTxn {
+        model,
+        req,
+    })
 }
 
 #[cfg(test)]
