@@ -24,7 +24,7 @@ fn test_version() {
     };
 
     let mut response = MboxBuffer::default();
-    let resp_len = hw
+    let _ = hw
         .mailbox_execute(CommandId::VERSION.into(), payload.as_bytes(), &mut response)
         .unwrap()
         .unwrap();

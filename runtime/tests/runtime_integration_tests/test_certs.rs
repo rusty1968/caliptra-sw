@@ -77,7 +77,7 @@ fn test_rt_cert_with_custom_dates() {
         .unwrap();
     assert!(resp.len() <= std::mem::size_of::<GetRtAliasCertResp>());
     let mut rt_resp = GetRtAliasCertResp::default();
-    rt_resp.as_bytes_mut()[..resp.len()].copy_from_slice(&resp);
+    rt_resp.as_bytes_mut()[..resp.len()].copy_from_slice(resp);
 
     let rt_cert: X509 = X509::from_der(&rt_resp.data[..rt_resp.data_size as usize]).unwrap();
 
@@ -137,7 +137,7 @@ fn test_idev_id_cert() {
 
     assert!(resp.len() <= std::mem::size_of::<GetIdevCertResp>());
     let mut cert = GetIdevCertResp::default();
-    cert.as_bytes_mut()[..resp.len()].copy_from_slice(&resp);
+    cert.as_bytes_mut()[..resp.len()].copy_from_slice(resp);
 
     assert!(caliptra_common::checksum::verify_checksum(
         cert.hdr.chksum,
@@ -182,7 +182,7 @@ fn get_ldev_cert(model: &mut DefaultHwModel) -> GetLdevCertResp {
         .unwrap();
     assert!(resp.len() <= std::mem::size_of::<GetLdevCertResp>());
     let mut ldev_resp = GetLdevCertResp::default();
-    ldev_resp.as_bytes_mut()[..resp.len()].copy_from_slice(&resp);
+    ldev_resp.as_bytes_mut()[..resp.len()].copy_from_slice(resp);
     ldev_resp
 }
 

@@ -57,13 +57,13 @@ pub fn get_data<'a>(to_match: &str, haystack: &'a str) -> &'a str {
         .unwrap_or("")
 }
 
-pub fn get_csr<'a, 'b, TModel: HwModel + SocManager>(
-    model: &'a mut TModel,
-    mut buffer: &'b mut MboxBuffer,
-) -> Result<&'b [u8], ModelError> {
+pub fn get_csr<'a, TModel: HwModel + SocManager>(
+    model: &mut TModel,
+    mut buffer: &'a mut MboxBuffer,
+) -> Result<&'a [u8], ModelError> {
     model.step_until(|m| m.soc_ifc().cptra_flow_status().read().idevid_csr_ready());
 
-    let req = model.wait_for_mailbox_receive(&mut buffer)?;
+    let req = model.wait_for_mailbox_receive(buffer)?;
 
     let txn = caliptra_hw_model::MailboxRecvTxn { req, model };
     txn.respond_success();
