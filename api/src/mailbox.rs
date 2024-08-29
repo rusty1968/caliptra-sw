@@ -933,6 +933,12 @@ impl MboxBuffer {
     const MAX_SIZE: usize = 4096;
 }
 
+impl PartialEq<[u8]> for MboxBuffer {
+    fn eq(&self, other: &[u8]) -> bool {
+        self.data.as_slice() == other
+    }
+}
+
 impl Deref for MboxBuffer {
     type Target = ArrayVec<u8, { Self::MAX_SIZE }>;
 

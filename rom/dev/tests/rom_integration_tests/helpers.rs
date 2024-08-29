@@ -59,7 +59,7 @@ pub fn get_data<'a>(to_match: &str, haystack: &'a str) -> &'a str {
 
 pub fn get_csr<'a, TModel: HwModel + SocManager>(
     model: &mut TModel,
-    mut buffer: &'a mut MboxBuffer,
+    buffer: &'a mut MboxBuffer,
 ) -> Result<&'a [u8], ModelError> {
     model.step_until(|m| m.soc_ifc().cptra_flow_status().read().idevid_csr_ready());
 

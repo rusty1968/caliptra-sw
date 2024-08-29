@@ -6,9 +6,10 @@ use std::iter;
 use caliptra_builder::{firmware, FwId};
 use caliptra_drivers::{Array4x12, Array4xN, Ecc384PubKey};
 use caliptra_drivers_test_bin::DoeTestResults;
+use caliptra_hw_model::wait_for_mailbox_receive;
 use caliptra_hw_model::{
-    BootParams, DefaultHwModel, DeviceLifecycle, HwModel, InitParams, ModelError, SecurityState,
-    SocManager, TrngMode,
+    BootParams, DefaultHwModel, DeviceLifecycle, HwModel, InitParams, MboxBuffer, ModelError,
+    SecurityState, SocManager, TrngMode,
 };
 use caliptra_hw_model_types::EtrngResponse;
 use caliptra_registers::mbox::enums::MboxStatusE;
@@ -219,7 +220,8 @@ fn test_doe_when_debug_not_locked() {
     )
     .unwrap();
 
-    let txn = model.wait_for_mailbox_receive().unwrap();
+    let mut resp_buffer = MboxBuffer::default();
+    let txn = wait_for_mailbox_receive(&mut model, &mut resp_buffer).unwrap();
     let test_results = DoeTestResults::read_from(txn.req.data.as_slice()).unwrap();
     assert_eq!(
         test_results,
@@ -313,7 +315,8 @@ fn test_doe_when_debug_locked() {
     )
     .unwrap();
 
-    let txn = model.wait_for_mailbox_receive().unwrap();
+    let mut resp_buffer = MboxBuffer::default();
+    let txn = wait_for_mailbox_receive(&mut model, &mut resp_buffer).unwrap();
     let test_results = DoeTestResults::read_from(txn.req.data.as_slice()).unwrap();
     assert_eq!(test_results, DOE_TEST_VECTORS.expected_test_results);
     txn.respond_success();
@@ -359,10 +362,12 @@ fn test_mailbox_soc_to_uc() {
 
     // Test MailboxRecvTxn::recv_request()
     {
+        let mut resp_buffer = MboxBuffer::default();
         let resp = model
             .mailbox_execute(
                 0x5000_0000,
                 &[0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef],
+                &mut resp_buffer,
             )
             .unwrap();
 
@@ -379,8 +384,13 @@ fn test_mailbox_soc_to_uc() {
         assert_eq!(resp, None);
 
         // Try again, but with a non-multiple-of-4 size
+        let mut resp_buffer = MboxBuffer::default();
         let resp = model
-            .mailbox_execute(0x5000_0000, &[0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd])
+            .mailbox_execute(
+                0x5000_0000,
+                &[0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd],
+                &mut resp_buffer,
+            )
             .unwrap();
         model
             .step_until_output_and_take(
@@ -392,7 +402,10 @@ fn test_mailbox_soc_to_uc() {
         assert_eq!(resp, None);
 
         // Try again, but with no data in the FIFO
-        let resp = model.mailbox_execute(0x5000_0000, &[]).unwrap();
+        let mut resp_bytes = MboxBuffer::default();
+        let resp = model
+            .mailbox_execute(0x5000_0000, &[], &mut resp_bytes)
+            .unwrap();
         model
             .step_until_output_and_take(
                 "cmd: 0x50000000\n\
@@ -403,8 +416,13 @@ fn test_mailbox_soc_to_uc() {
         assert_eq!(resp, None);
 
         // Try again, but with a non-multiple-of-4 dest buffer (0x5000_0001)
+        let mut resp_buffer = MboxBuffer::default();
         let resp = model
-            .mailbox_execute(0x5000_0001, &[0x01, 0x23, 0x45, 0x67, 0x89])
+            .mailbox_execute(
+                0x5000_0001,
+                &[0x01, 0x23, 0x45, 0x67, 0x89],
+                &mut resp_buffer,
+            )
             .unwrap();
         model
             .step_until_output_and_take(
@@ -416,8 +434,13 @@ fn test_mailbox_soc_to_uc() {
         assert_eq!(resp, None);
 
         // Try again, but with one more byte than will fit in the dest buffer
+        let mut resp_buffer = MboxBuffer::default();
         let resp = model
-            .mailbox_execute(0x5000_0001, &[0x01, 0x23, 0x45, 0x67, 0x89, 0xab])
+            .mailbox_execute(
+                0x5000_0001,
+                &[0x01, 0x23, 0x45, 0x67, 0x89, 0xab],
+                &mut resp_buffer,
+            )
             .unwrap();
         model
             .step_until_output_and_take(
@@ -429,10 +452,12 @@ fn test_mailbox_soc_to_uc() {
         assert_eq!(resp, None);
 
         // Try again, but with 4 more bytes than will fit in the dest buffer
+        let mut resp_buffer = MboxBuffer::default();
         let resp = model
             .mailbox_execute(
                 0x5000_0001,
                 &[0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x11],
+                &mut resp_buffer,
             )
             .unwrap();
 
@@ -448,6 +473,7 @@ fn test_mailbox_soc_to_uc() {
 
     // Test MailboxRecvTxn::copy_request
     {
+        let mut resp_buffer = MboxBuffer::default();
         let resp = model
             .mailbox_execute(
                 0x6000_0000,
@@ -455,6 +481,7 @@ fn test_mailbox_soc_to_uc() {
                     0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x00, 0x11, 0x22, 0x33, 0x44,
                     0x55, 0x66, 0x77,
                 ],
+                &mut resp_buffer,
             )
             .unwrap();
         model
@@ -468,14 +495,17 @@ fn test_mailbox_soc_to_uc() {
         assert_eq!(resp, None);
 
         // Try again, but with a non-multiple-of-4 size
+        let mut resp_buffer = MboxBuffer::default();
         let resp = model
             .mailbox_execute(
                 0x6000_0000,
                 &[
                     0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x00, 0x11, 0x22, 0x33, 0x44,
                 ],
+                &mut resp_buffer,
             )
             .unwrap();
+
         model
             .step_until_output_and_take(
                 "cmd: 0x60000000\n\
@@ -487,12 +517,14 @@ fn test_mailbox_soc_to_uc() {
         assert_eq!(resp, None);
 
         // Try again, but where the buffer is larger than the last chunk
+        let mut resp_buffer = MboxBuffer::default();
         let resp = model
             .mailbox_execute(
                 0x6000_0000,
                 &[
                     0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x00, 0x11, 0x22, 0x33,
                 ],
+                &mut resp_buffer,
             )
             .unwrap();
         model
@@ -506,7 +538,10 @@ fn test_mailbox_soc_to_uc() {
         assert_eq!(resp, None);
 
         // Try again, but with no data in the FIFO
-        let resp = model.mailbox_execute(0x6000_0000, &[]).unwrap();
+        let mut resp_buffer = MboxBuffer::default();
+        let resp = model
+            .mailbox_execute(0x6000_0000, &[], &mut resp_buffer)
+            .unwrap();
 
         model
             .step_until_output_and_take(
@@ -519,8 +554,9 @@ fn test_mailbox_soc_to_uc() {
 
     // Test MailboxRecvTxn completed with success without draining the FIFO
     {
+        let mut resp_buffer = MboxBuffer::default();
         let resp = model
-            .mailbox_execute(0x7000_0000, &[0x88, 0x99, 0xaa, 0xbb])
+            .mailbox_execute(0x7000_0000, &[0x88, 0x99, 0xaa, 0xbb], &mut resp_buffer)
             .unwrap();
 
         model
@@ -529,8 +565,13 @@ fn test_mailbox_soc_to_uc() {
         assert_eq!(resp, None);
 
         // Make sure the next command doesn't see the FIFO from the previous command
+        let mut resp_buffer = MboxBuffer::default();
         let resp = model
-            .mailbox_execute(0x6000_0000, &[0x07, 0x06, 0x05, 0x04, 0x03])
+            .mailbox_execute(
+                0x6000_0000,
+                &[0x07, 0x06, 0x05, 0x04, 0x03],
+                &mut resp_buffer,
+            )
             .unwrap();
 
         model
@@ -545,8 +586,9 @@ fn test_mailbox_soc_to_uc() {
 
     // Test MailboxRecvTxn completed with failure without draining the FIFO
     {
+        let mut resp_buffer = MboxBuffer::default();
         assert_eq!(
-            model.mailbox_execute(0x8000_0000, &[0x88, 0x99, 0xaa, 0xbb]),
+            model.mailbox_execute(0x8000_0000, &[0x88, 0x99, 0xaa, 0xbb], &mut resp_buffer),
             Err(ModelError::MailboxCmdFailed(0))
         );
 
@@ -555,8 +597,13 @@ fn test_mailbox_soc_to_uc() {
             .unwrap();
 
         // Make sure the next command doesn't see the FIFO from the previous command
+        let mut resp_buffer = MboxBuffer::default();
         let resp = model
-            .mailbox_execute(0x6000_0000, &[0x07, 0x06, 0x05, 0x04, 0x03])
+            .mailbox_execute(
+                0x6000_0000,
+                &[0x07, 0x06, 0x05, 0x04, 0x03],
+                &mut resp_buffer,
+            )
             .unwrap();
         model
             .step_until_output_and_take(
@@ -570,10 +617,12 @@ fn test_mailbox_soc_to_uc() {
 
     // Test drop_words
     {
+        let mut resp_bytes = MboxBuffer::default();
         let resp = model
             .mailbox_execute(
                 0x9000_0000,
                 &[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08],
+                &mut resp_bytes,
             )
             .unwrap();
         model
@@ -588,17 +637,26 @@ fn test_mailbox_soc_to_uc() {
 
     // Test 4 byte response with no request data
     {
-        let resp = model.mailbox_execute(0xA000_0000, &[]).unwrap().unwrap();
+        let mut resp_buffer = MboxBuffer::default();
+        let resp = model
+            .mailbox_execute(0xA000_0000, &[], &mut resp_buffer)
+            .unwrap()
+            .unwrap();
         model
             .step_until_output_and_take("cmd: 0xa0000000\n")
             .unwrap();
-        assert_eq!(resp, [0x12, 0x34, 0x56, 0x78]);
+        assert_eq!(resp.as_bytes(), [0x12, 0x34, 0x56, 0x78]);
     }
 
     // Test 2 byte response with request data
     {
+        let mut resp_buffer = MboxBuffer::default();
         let resp = model
-            .mailbox_execute(0xB000_0000, &[0x0f, 0x0e, 0x0d, 0x0c, 0x0b, 0xa])
+            .mailbox_execute(
+                0xB000_0000,
+                &[0x0f, 0x0e, 0x0d, 0x0c, 0x0b, 0xa],
+                &mut resp_buffer,
+            )
             .unwrap()
             .unwrap();
         model
@@ -608,25 +666,36 @@ fn test_mailbox_soc_to_uc() {
                  buf: [0c0d0e0f, 00000a0b]\n",
             )
             .unwrap();
-        assert_eq!(resp, [0x98, 0x76]);
+        assert_eq!(resp.as_bytes(), [0x98, 0x76]);
     }
 
     // Test 9 byte reponse
     {
-        let resp = model.mailbox_execute(0xC000_0000, &[]).unwrap().unwrap();
+        let mut resp_buffer = MboxBuffer::default();
+        let resp = model
+            .mailbox_execute(0xC000_0000, &[], &mut resp_buffer)
+            .unwrap()
+            .unwrap();
         model
             .step_until_output_and_take("cmd: 0xc0000000\n")
             .unwrap();
-        assert_eq!(resp, [0x0A, 0x0B, 0x0C, 0x0D, 0x05, 0x04, 0x03, 0x02, 0x01]);
+        assert_eq!(
+            resp.as_bytes(),
+            [0x0A, 0x0B, 0x0C, 0x0D, 0x05, 0x04, 0x03, 0x02, 0x01]
+        );
     }
 
     // Test reponse with 0 bytes (still calls copy_response)
     {
-        let resp = model.mailbox_execute(0xD000_0000, &[]).unwrap().unwrap();
+        let mut resp_buffer = MboxBuffer::default();
+        let resp = model
+            .mailbox_execute(0xD000_0000, &[], &mut resp_buffer)
+            .unwrap()
+            .unwrap();
         model
             .step_until_output_and_take("cmd: 0xd0000000\n")
             .unwrap();
-        assert_eq!(resp, [] as [u8; 0]);
+        assert_eq!(resp.as_bytes(), [] as [u8; 0]);
     }
     // Ensure there isn't any unexpected output
     for _i in 0..100000 {
@@ -640,40 +709,47 @@ fn test_mailbox_uc_to_soc() {
     let mut model = start_driver_test(&firmware::driver_tests::MAILBOX_DRIVER_SENDER).unwrap();
 
     // 0 byte request
-    let txn = model.wait_for_mailbox_receive().unwrap();
+    let mut resp_buffer = MboxBuffer::default();
+    let txn = wait_for_mailbox_receive(&mut model, &mut resp_buffer).unwrap();
     assert_eq!(txn.req.cmd, 0xa000_0000);
-    assert_eq!(txn.req.data, b"");
+    assert_eq!(txn.req.data.as_bytes(), b"");
     txn.respond_success();
 
     // 3 byte request
-    let txn = model.wait_for_mailbox_receive().unwrap();
+    let mut resp_buffer = MboxBuffer::default();
+    let txn = wait_for_mailbox_receive(&mut model, &mut resp_buffer).unwrap();
     assert_eq!(txn.req.cmd, 0xa000_1000);
-    assert_eq!(txn.req.data, b"Hi!");
+    assert_eq!(txn.req.data.as_bytes(), b"Hi!");
     // NOTE: The current driver doesn't actually look at the result
     txn.respond_success();
 
     // 4 byte request
-    let txn = model.wait_for_mailbox_receive().unwrap();
+    let mut resp_buffer = MboxBuffer::default();
+    let txn = wait_for_mailbox_receive(&mut model, &mut resp_buffer).unwrap();
     assert_eq!(txn.req.cmd, 0xa000_2000);
-    assert_eq!(txn.req.data, b"Hi!!");
+    assert_eq!(txn.req.data.as_bytes(), b"Hi!!");
     txn.respond_success();
 
     // 6 byte request
-    let txn = model.wait_for_mailbox_receive().unwrap();
+    let mut resp_buffer = MboxBuffer::default();
+    let txn = wait_for_mailbox_receive(&mut model, &mut resp_buffer).unwrap();
     assert_eq!(txn.req.cmd, 0xa000_3000);
-    assert_eq!(txn.req.data, b"Hello!");
+    assert_eq!(txn.req.data.as_bytes(), b"Hello!");
     txn.respond_success();
 
     // 8 byte request
-    let txn = model.wait_for_mailbox_receive().unwrap();
+    let mut resp_buffer = MboxBuffer::default();
+    let txn = wait_for_mailbox_receive(&mut model, &mut resp_buffer).unwrap();
+
     assert_eq!(txn.req.cmd, 0xa000_4000);
-    assert_eq!(txn.req.data, b"Hello!!!");
+    assert_eq!(txn.req.data.as_bytes(), b"Hello!!!");
     txn.respond_success();
 
     // write_cmd / write_dlen / execute_request used separately
-    let txn = model.wait_for_mailbox_receive().unwrap();
+    let mut resp_buffer = MboxBuffer::default();
+    let txn = wait_for_mailbox_receive(&mut model, &mut resp_buffer).unwrap();
     assert_eq!(txn.req.cmd, 0xb000_0000);
-    assert_eq!(txn.req.data, b"");
+    assert_eq!(&txn.req.data.as_bytes(), b"");
     txn.respond_success();
 }
 
@@ -684,7 +760,9 @@ fn test_uc_to_soc_error_state() {
 
     let mut model =
         start_driver_test(&firmware::driver_tests::MAILBOX_DRIVER_NEGATIVE_TESTS).unwrap();
-    let txn = model.wait_for_mailbox_receive().unwrap();
+
+    let mut resp_buffer = MboxBuffer::default();
+    let txn = wait_for_mailbox_receive(&mut model, &mut resp_buffer).unwrap();
 
     let cmd = txn.req.cmd;
 
@@ -710,7 +788,8 @@ fn test_uc_to_soc_error_state() {
     // Wait for the test-case to force unlock the mailbox
     model.step_until(|m| m.soc_mbox().status().read().mbox_fsm_ps().mbox_idle());
 
-    let _txn = model.wait_for_mailbox_receive().unwrap();
+    let mut resp_buffer = MboxBuffer::default();
+    let _txn = wait_for_mailbox_receive(&mut model, &mut resp_buffer).unwrap();
     model.soc_mbox().execute().write(|w| w.execute(true));
 
     assert!(model.soc_mbox().status().read().mbox_fsm_ps().mbox_error());
@@ -1031,26 +1110,30 @@ fn test_trng_in_itrng_mode() {
     )
     .unwrap();
 
-    let trng_block = model.mailbox_execute(0, &[]).unwrap();
+    let mut resp_buffer = MboxBuffer::default();
+    let trng_block = model.mailbox_execute(0, &[], &mut resp_buffer).unwrap();
     assert_eq!(
-        trng_block,
-        Some(vec![
+        trng_block.unwrap().as_slice(),
+        [
             0x2f, 0x3c, 0x3d, 0xca, 0x53, 0xdb, 0x2a, 0x55, 0x5d, 0x9c, 0x74, 0xa9, 0xc3, 0xe4,
             0xbb, 0xda, 0x53, 0x3b, 0x75, 0xcc, 0x22, 0xf0, 0x86, 0xe0, 0xda, 0xd9, 0x55, 0x13,
             0x37, 0xe5, 0xc3, 0x69, 0x77, 0x65, 0xe6, 0x7e, 0x4d, 0x7b, 0x5a, 0xca, 0x16, 0xe6,
             0x7e, 0x1f, 0xaa, 0xd8, 0x5c, 0x9a,
-        ])
+        ]
+        .as_slice()
     );
 
-    let trng_block = model.mailbox_execute(0, &[]).unwrap();
+    let mut resp_buffer = MboxBuffer::default();
+    let trng_block = model.mailbox_execute(0, &[], &mut resp_buffer).unwrap();
     assert_eq!(
-        trng_block,
-        Some(vec![
+        trng_block.unwrap().as_slice(),
+        [
             0x96, 0xf0, 0x63, 0x7d, 0x79, 0xb9, 0xc, 0xfd, 0x84, 0x7e, 0x5e, 0x7b, 0x68, 0x6, 0xc9,
             0x7c, 0x90, 0xdc, 0xde, 0x26, 0x63, 0x7d, 0x4, 0xcd, 0x98, 0x47, 0x79, 0x87, 0x97,
             0x88, 0xfe, 0x2, 0xcd, 0xe8, 0xed, 0x1e, 0xe8, 0x10, 0x4b, 0xce, 0x93, 0xca, 0x24,
             0xba, 0x80, 0xc2, 0x41, 0xae,
-        ])
+        ]
+        .as_slice()
     );
 }
 
@@ -1099,11 +1182,13 @@ fn test_trng_in_etrng_mode() {
     )
     .unwrap();
 
-    let trng_block = model.mailbox_execute(0, &[]).unwrap();
-    assert_eq!(trng_block, Some(block0.as_bytes().to_vec()));
+    let mut resp_buffer = MboxBuffer::default();
+    let trng_block = model.mailbox_execute(0, &[], &mut resp_buffer).unwrap();
+    assert_eq!(trng_block.unwrap().as_bytes(), block0.as_bytes());
 
-    let trng_block = model.mailbox_execute(0, &[]).unwrap();
-    assert_eq!(trng_block, Some(block1.as_bytes().to_vec()));
+    let mut resp_buffer = MboxBuffer::default();
+    let trng_block = model.mailbox_execute(0, &[], &mut resp_buffer).unwrap();
+    assert_eq!(trng_block.unwrap().as_bytes(), block1.as_bytes());
 }
 
 #[test]

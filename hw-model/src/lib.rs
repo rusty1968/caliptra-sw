@@ -1000,8 +1000,8 @@ pub trait HwModel: SocManager {
 }
 
 pub fn wait_for_mailbox_receive<'a, 'b, TModel: HwModel + SocManager>(
-    mut model: &'a mut TModel,
-    mut buffer: &'b mut MboxBuffer,
+    model: &'a mut TModel,
+    buffer: &'b mut MboxBuffer,
 ) -> Result<MailboxRecvTxn<'a, 'b, TModel>, ModelError> {
     let req: crate::MailboxRequest = model.wait_for_mailbox_receive(buffer)?;
     Ok(crate::MailboxRecvTxn {
