@@ -7,7 +7,7 @@ use caliptra_common::fips::FipsVersionCmd;
 use caliptra_common::mailbox_api::*;
 use caliptra_drivers::CaliptraError;
 use caliptra_drivers::FipsTestHook;
-use caliptra_hw_model::{BootParams, HwModel, InitParams, ModelError, ShaAccMode};
+use caliptra_hw_model::{BootParams, HwModel, InitParams, ModelError, ShaAccMode,SocManager};
 use caliptra_image_types::ImageManifest;
 use common::*;
 use dpe::{commands::*, context::ContextHandle, response::Response, DPE_PROFILE};

@@ -11,9 +11,12 @@ Abstract:
     File contains exports for for Caliptra Emulator Types library.
 
 --*/
+#![cfg_attr(not(test), no_std)]
 
+pub mod bus;
 mod exception;
 mod macros;
+pub mod mmio;
 
 pub use crate::exception::{RvException, RvExceptionCause};
 

@@ -7,7 +7,7 @@ use caliptra_builder::{
 use caliptra_common::mailbox_api::{
     CommandId, MailboxReq, MailboxReqHeader, StashMeasurementReq, StashMeasurementResp,
 };
-use caliptra_hw_model::HwModel;
+use caliptra_hw_model::{HwModel, MboxBuffer, SocManager};
 use caliptra_runtime::RtBootStatus;
 use sha2::{Digest, Sha384};
 use zerocopy::{AsBytes, LayoutVerified};
@@ -32,10 +32,13 @@ fn test_stash_measurement() {
     });
     cmd.populate_chksum().unwrap();
 
+    let mut resp_bytes = MboxBuffer::default();
+
     let resp = model
         .mailbox_execute(
             u32::from(CommandId::STASH_MEASUREMENT),
             cmd.as_bytes().unwrap(),
+            &mut resp_bytes,
         )
         .unwrap()
         .expect("We should have received a response");
@@ -58,14 +61,27 @@ fn test_stash_measurement() {
     .unwrap();
 
     // trigger an update reset so we can use commands in mbox responder
+    let mut resp_bytes = MboxBuffer::default();
     model
-        .mailbox_execute(u32::from(CommandId::FIRMWARE_LOAD), &updated_fw_image)
+        .mailbox_execute(
+            u32::from(CommandId::FIRMWARE_LOAD),
+            &updated_fw_image,
+            &mut resp_bytes,
+        )
         .unwrap();
 
-    let rt_journey_pcr_resp = model.mailbox_execute(0x1000_0000, &[]).unwrap().unwrap();
+    let mut resp_bytes = MboxBuffer::default();
+    let rt_journey_pcr_resp = model
+        .mailbox_execute(0x1000_0000, &[], &mut resp_bytes)
+        .unwrap()
+        .unwrap();
     let rt_journey_pcr: [u8; 48] = rt_journey_pcr_resp.as_bytes().try_into().unwrap();
 
-    let valid_pauser_hash_resp = model.mailbox_execute(0x2000_0000, &[]).unwrap().unwrap();
+    let mut resp_bytes = MboxBuffer::default();
+    let valid_pauser_hash_resp = model
+        .mailbox_execute(0x2000_0000, &[], &mut resp_bytes)
+        .unwrap()
+        .unwrap();
     let valid_pauser_hash: [u8; 48] = valid_pauser_hash_resp.as_bytes().try_into().unwrap();
 
     // hash expected DPE measurements in order to check that stashed measurement was added to DPE
@@ -75,8 +91,15 @@ fn test_stash_measurement() {
     hasher.update(measurement);
     let expected_measurement_hash = hasher.finalize();
 
-    let dpe_measurement_hash = model.mailbox_execute(0x3000_0000, &[]).unwrap().unwrap();
-    assert_eq!(expected_measurement_hash.as_bytes(), dpe_measurement_hash);
+    let mut resp_bytes = MboxBuffer::default();
+    let dpe_measurement_hash = model
+        .mailbox_execute(0x3000_0000, &[], &mut resp_bytes)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        expected_measurement_hash.as_bytes(),
+        dpe_measurement_hash.as_bytes()
+    );
 }
 
 #[test]
@@ -84,7 +107,11 @@ fn test_pcr31_extended_upon_stash_measurement() {
     let mut model = run_rt_test(Some(&firmware::runtime_tests::MBOX), None, None);
 
     // Read PCR_ID_STASH_MEASUREMENT
-    let pcr_31_resp = model.mailbox_execute(0x5000_0000, &[]).unwrap().unwrap();
+    let mut resp_bytes = MboxBuffer::default();
+    let pcr_31_resp = model
+        .mailbox_execute(0x5000_0000, &[], &mut resp_bytes)
+        .unwrap()
+        .unwrap();
     let pcr_31: [u8; 48] = pcr_31_resp.as_bytes().try_into().unwrap();
 
     // update reset to the real runtime image
@@ -96,8 +123,14 @@ fn test_pcr31_extended_upon_stash_measurement() {
     .unwrap()
     .to_bytes()
     .unwrap();
+
+    let mut resp_bytes = MboxBuffer::default();
     model
-        .mailbox_execute(u32::from(CommandId::FIRMWARE_LOAD), &updated_fw_image)
+        .mailbox_execute(
+            u32::from(CommandId::FIRMWARE_LOAD),
+            &updated_fw_image,
+            &mut resp_bytes,
+        )
         .unwrap();
 
     // stash a measurement
@@ -111,10 +144,12 @@ fn test_pcr31_extended_upon_stash_measurement() {
     });
     cmd.populate_chksum().unwrap();
 
+    let mut resp_bytes = MboxBuffer::default();
     let _ = model
         .mailbox_execute(
             u32::from(CommandId::STASH_MEASUREMENT),
             cmd.as_bytes().unwrap(),
+            &mut resp_bytes,
         )
         .unwrap()
         .expect("We should have received a response");
@@ -128,8 +163,13 @@ fn test_pcr31_extended_upon_stash_measurement() {
     .unwrap()
     .to_bytes()
     .unwrap();
+    let mut resp_bytes = MboxBuffer::default();
     model
-        .mailbox_execute(u32::from(CommandId::FIRMWARE_LOAD), &updated_fw_image)
+        .mailbox_execute(
+            u32::from(CommandId::FIRMWARE_LOAD),
+            &updated_fw_image,
+            &mut resp_bytes,
+        )
         .unwrap();
 
     let updated_fw_image = caliptra_builder::build_and_sign_image(
@@ -140,12 +180,21 @@ fn test_pcr31_extended_upon_stash_measurement() {
     .unwrap()
     .to_bytes()
     .unwrap();
+    let mut resp_bytes = MboxBuffer::default();
     model
-        .mailbox_execute(u32::from(CommandId::FIRMWARE_LOAD), &updated_fw_image)
+        .mailbox_execute(
+            u32::from(CommandId::FIRMWARE_LOAD),
+            &updated_fw_image,
+            &mut resp_bytes,
+        )
         .unwrap();
 
+    let mut resp_bytes = MboxBuffer::default();
     // Read extended PCR_ID_STASH_MEASUREMENT
-    let extended_pcr_31_resp = model.mailbox_execute(0x5000_0000, &[]).unwrap().unwrap();
+    let extended_pcr_31_resp = model
+        .mailbox_execute(0x5000_0000, &[], &mut resp_bytes)
+        .unwrap()
+        .unwrap();
     let extended_pcr_31: [u8; 48] = extended_pcr_31_resp.as_bytes().try_into().unwrap();
 
     // no need to flip endianness here since PCRs are already in same endianness

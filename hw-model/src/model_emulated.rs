@@ -25,6 +25,7 @@ use crate::trace_path_or_env;
 use crate::InitParams;
 use crate::ModelError;
 use crate::Output;
+use crate::SocManager;
 use crate::TrngMode;
 use caliptra_emu_bus::Bus;
 
@@ -106,9 +107,22 @@ fn hash_slice(slice: &[u8]) -> u64 {
     hasher.finish()
 }
 
-impl crate::HwModel for ModelEmulated {
+impl SocManager for ModelEmulated {
     type TBus<'a> = EmulatedApbBus<'a>;
 
+    const SOC_IFC_ADDR: u32 = 0x3003_0000;
+    const SOC_IFC_TRNG_ADDR: u32 = 0x3003_0000;
+    const SOC_SHA512_ACC_ADDR: u32 = 0x3002_1000;
+    const SOC_MBOX_ADDR: u32 = 0x3002_0000;
+
+    const MAX_WAIT_CYCLES: u32 = 20_000_000;
+
+    fn apb_bus(&mut self) -> Self::TBus<'_> {
+        EmulatedApbBus { model: self }
+    }
+}
+
+impl crate::HwModel for ModelEmulated {
     fn new_unbooted(params: InitParams) -> Result<Self, Box<dyn Error>>
     where
         Self: Sized,
@@ -200,9 +214,6 @@ impl crate::HwModel for ModelEmulated {
 
     fn ready_for_fw(&self) -> bool {
         self.ready_for_fw.get()
-    }
-    fn apb_bus(&mut self) -> Self::TBus<'_> {
-        EmulatedApbBus { model: self }
     }
 
     fn step(&mut self) {

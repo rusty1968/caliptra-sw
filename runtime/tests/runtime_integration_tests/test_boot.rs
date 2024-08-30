@@ -8,12 +8,13 @@ use caliptra_common::{
     mailbox_api::{CommandId, MailboxReq, MailboxReqHeader, StashMeasurementReq},
     RomBootStatus,
 };
-use caliptra_hw_model::{BootParams, Fuses, HwModel, InitParams, SecurityState};
+use caliptra_hw_model::{BootParams, Fuses, HwModel, InitParams, SecurityState, SocManager};
 use caliptra_runtime::RtBootStatus;
 use sha2::{Digest, Sha384};
 use zerocopy::AsBytes;
 
 use crate::common::{run_rt_test, DEFAULT_APP_VERSION, DEFAULT_FMC_VERSION};
+use caliptra_hw_model::MboxBuffer;
 
 const RT_READY_FOR_COMMANDS: u32 = 0x600;
 
@@ -82,8 +83,9 @@ fn test_update() {
 
     model.step_until(|m| m.soc_mbox().status().read().mbox_fsm_ps().mbox_idle());
 
+    let mut buffer = MboxBuffer::default();
     model
-        .mailbox_execute(u32::from(CommandId::FIRMWARE_LOAD), &image)
+        .mailbox_execute(u32::from(CommandId::FIRMWARE_LOAD), &image, &mut buffer)
         .unwrap();
 
     model.step_until_boot_status(RT_READY_FOR_COMMANDS, true);
@@ -131,8 +133,13 @@ fn test_stress_update() {
             image_select = 0;
         };
 
+        let mut buffer = MboxBuffer::default();
         model
-            .mailbox_execute(u32::from(CommandId::FIRMWARE_LOAD), &image[image_select])
+            .mailbox_execute(
+                u32::from(CommandId::FIRMWARE_LOAD),
+                &image[image_select],
+                &mut buffer,
+            )
             .unwrap();
 
         model.step_until_boot_status(RT_READY_FOR_COMMANDS, true);
@@ -148,10 +155,19 @@ fn test_stress_update() {
 fn test_boot_tci_data() {
     let mut model = run_rt_test(Some(&firmware::runtime_tests::MBOX), None, None);
 
-    let rt_journey_pcr_resp = model.mailbox_execute(0x1000_0000, &[]).unwrap().unwrap();
+    let mut buffer = MboxBuffer::default();
+
+    let rt_journey_pcr_resp = model
+        .mailbox_execute(0x1000_0000, &[], &mut buffer)
+        .unwrap()
+        .unwrap();
     let rt_journey_pcr: [u8; 48] = rt_journey_pcr_resp.as_bytes().try_into().unwrap();
 
-    let valid_pauser_hash_resp = model.mailbox_execute(0x2000_0000, &[]).unwrap().unwrap();
+    let mut buffer = MboxBuffer::default();
+    let valid_pauser_hash_resp = model
+        .mailbox_execute(0x2000_0000, &[], &mut buffer)
+        .unwrap()
+        .unwrap();
     let valid_pauser_hash: [u8; 48] = valid_pauser_hash_resp.as_bytes().try_into().unwrap();
 
     // hash expected DPE measurements in order
@@ -160,8 +176,16 @@ fn test_boot_tci_data() {
     hasher.update(valid_pauser_hash);
     let expected_measurement_hash = hasher.finalize();
 
-    let dpe_measurement_hash = model.mailbox_execute(0x3000_0000, &[]).unwrap().unwrap();
-    assert_eq!(expected_measurement_hash.as_bytes(), dpe_measurement_hash);
+    let mut buffer = MboxBuffer::default();
+
+    let dpe_measurement_hash = model
+        .mailbox_execute(0x3000_0000, &[], &mut buffer)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        expected_measurement_hash.as_bytes(),
+        dpe_measurement_hash.as_bytes()
+    );
 }
 
 #[test]
@@ -209,10 +233,20 @@ fn test_measurement_in_measurement_log_added_to_dpe() {
 
     model.step_until_boot_status(u32::from(RomBootStatus::ColdResetComplete), true);
 
-    let rt_journey_pcr_resp = model.mailbox_execute(0x1000_0000, &[]).unwrap().unwrap();
+    let mut buffer = MboxBuffer::default();
+
+    let rt_journey_pcr_resp = model
+        .mailbox_execute(0x1000_0000, &[], &mut buffer)
+        .unwrap()
+        .unwrap();
     let rt_journey_pcr: [u8; 48] = rt_journey_pcr_resp.as_bytes().try_into().unwrap();
 
-    let valid_pauser_hash_resp = model.mailbox_execute(0x2000_0000, &[]).unwrap().unwrap();
+    let mut buffer = MboxBuffer::default();
+
+    let valid_pauser_hash_resp = model
+        .mailbox_execute(0x2000_0000, &[], &mut buffer)
+        .unwrap()
+        .unwrap();
     let valid_pauser_hash: [u8; 48] = valid_pauser_hash_resp.as_bytes().try_into().unwrap();
 
     // hash expected DPE measurements in order
@@ -222,6 +256,14 @@ fn test_measurement_in_measurement_log_added_to_dpe() {
     hasher.update(measurement);
     let expected_measurement_hash = hasher.finalize();
 
-    let dpe_measurement_hash = model.mailbox_execute(0x3000_0000, &[]).unwrap().unwrap();
-    assert_eq!(expected_measurement_hash.as_bytes(), dpe_measurement_hash);
+    let mut buffer = MboxBuffer::default();
+
+    let dpe_measurement_hash = model
+        .mailbox_execute(0x3000_0000, &[], &mut buffer)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        expected_measurement_hash.as_bytes(),
+        dpe_measurement_hash.as_bytes()
+    );
 }
