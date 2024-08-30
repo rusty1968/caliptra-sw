@@ -8,7 +8,7 @@ use caliptra_common::mailbox_api::{
     GetRtAliasCertResp, ResponseVarSize,
 };
 use caliptra_common::RomBootStatus;
-use caliptra_drivers::{CaliptraError, MailboxRecvTxn};
+use caliptra_drivers::CaliptraError;
 use caliptra_hw_model::{BootParams, HwModel, InitParams, MboxBuffer, SecurityState, SocManager};
 use caliptra_hw_model_types::{RandomEtrngResponses, RandomNibbles};
 use caliptra_test::derive::{PcrRtCurrentInput, RtAliasKey};
@@ -23,7 +23,6 @@ use openssl::sha::{sha384, Sha384};
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 use regex::Regex;
-use std::mem;
 use zerocopy::AsBytes;
 
 #[track_caller]
@@ -66,7 +65,7 @@ fn retrieve_csr_test() {
     let csr_der = txn.req.data.as_bytes();
     txn.respond_success();
 
-    let csr = openssl::x509::X509Req::from_der(&csr_der).unwrap();
+    let csr = openssl::x509::X509Req::from_der(csr_der).unwrap();
     let csr_txt = String::from_utf8(csr.to_text().unwrap()).unwrap();
 
     // To update the CSR testdata:

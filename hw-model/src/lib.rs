@@ -1004,10 +1004,7 @@ pub fn wait_for_mailbox_receive<'a, 'b, TModel: HwModel + SocManager>(
     buffer: &'b mut MboxBuffer,
 ) -> Result<MailboxRecvTxn<'a, 'b, TModel>, ModelError> {
     let req: crate::MailboxRequest = model.wait_for_mailbox_receive(buffer)?;
-    Ok(crate::MailboxRecvTxn {
-        model,
-        req,
-    })
+    Ok(crate::MailboxRecvTxn { model, req })
 }
 
 #[cfg(test)]

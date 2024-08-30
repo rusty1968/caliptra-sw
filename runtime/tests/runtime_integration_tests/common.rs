@@ -196,7 +196,7 @@ pub fn execute_dpe_cmd(
 
     assert!(resp.len() <= std::mem::size_of::<InvokeDpeResp>());
     let mut resp_hdr = InvokeDpeResp::default();
-    resp_hdr.as_bytes_mut()[..resp.len()].copy_from_slice(&resp);
+    resp_hdr.as_bytes_mut()[..resp.len()].copy_from_slice(resp);
 
     assert!(caliptra_common::checksum::verify_checksum(
         resp_hdr.hdr.chksum,
@@ -247,7 +247,7 @@ pub fn get_fmc_alias_cert(model: &mut DefaultHwModel) -> GetFmcAliasCertResp {
         .unwrap();
     assert!(resp.len() <= std::mem::size_of::<GetFmcAliasCertResp>());
     let mut fmc_resp = GetFmcAliasCertResp::default();
-    fmc_resp.as_bytes_mut()[..resp.len()].copy_from_slice(&resp);
+    fmc_resp.as_bytes_mut()[..resp.len()].copy_from_slice(resp);
     fmc_resp
 }
 
@@ -269,6 +269,6 @@ pub fn get_rt_alias_cert(model: &mut DefaultHwModel) -> GetRtAliasCertResp {
         .unwrap();
     assert!(resp.len() <= std::mem::size_of::<GetRtAliasCertResp>());
     let mut rt_resp = GetRtAliasCertResp::default();
-    rt_resp.as_bytes_mut()[..resp.len()].copy_from_slice(&resp);
+    rt_resp.as_bytes_mut()[..resp.len()].copy_from_slice(resp);
     rt_resp
 }

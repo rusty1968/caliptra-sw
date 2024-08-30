@@ -1,7 +1,5 @@
 // Licensed under the Apache-2.0 license
 
-use std::default;
-
 use caliptra_builder::{
     firmware::{
         rom_tests::{FAKE_TEST_FMC_INTERACTIVE, FAKE_TEST_FMC_WITH_UART},

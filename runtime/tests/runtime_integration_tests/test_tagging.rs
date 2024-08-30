@@ -5,7 +5,6 @@ use caliptra_common::mailbox_api::{
     CommandId, GetTaggedTciReq, GetTaggedTciResp, MailboxReq, MailboxReqHeader, TagTciReq,
 };
 use caliptra_hw_model::{HwModel, MboxBuffer};
-use caliptra_registers::mbox::enums::selector::MboxFsmESelector;
 use dpe::{
     commands::{Command, DeriveContextCmd, DeriveContextFlags, DestroyCtxCmd},
     context::ContextHandle,

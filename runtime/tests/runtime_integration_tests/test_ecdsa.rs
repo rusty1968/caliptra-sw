@@ -273,10 +273,12 @@ fn test_ecdsa_hw_failure() {
     });
     cmd.populate_chksum().unwrap();
 
+    let mut response = MboxBuffer::default();
     let resp = model
         .mailbox_execute(
             u32::from(CommandId::ECDSA384_VERIFY),
             cmd.as_bytes().unwrap(),
+            & mut response
         )
         .unwrap_err();
 
