@@ -5,7 +5,9 @@ use caliptra_builder::{
     ImageOptions,
 };
 use caliptra_error::CaliptraError;
-use caliptra_hw_model::{BootParams, DeviceLifecycle, Fuses, HwModel, InitParams, SecurityState};
+use caliptra_hw_model::{
+    BootParams, DeviceLifecycle, Fuses, HwModel, InitParams, MboxBuffer, SecurityState, SocManager,
+};
 use caliptra_registers::mbox::enums::MboxStatusE;
 use dpe::DPE_PROFILE;
 use openssl::sha::sha384;
@@ -66,8 +68,13 @@ fn test_rt_journey_pcr_validation() {
     // Wait for boot
     model.step_until(|m| m.soc_ifc().cptra_flow_status().read().ready_for_runtime());
 
+    let mut resp_bytes = MboxBuffer::default();
     let _ = model
-        .mailbox_execute(0xD000_0000, &[0u8; DPE_PROFILE.get_tci_size()])
+        .mailbox_execute(
+            0xD000_0000,
+            &[0u8; DPE_PROFILE.get_tci_size()],
+            &mut resp_bytes,
+        )
         .unwrap()
         .unwrap();
 

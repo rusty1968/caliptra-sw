@@ -1,5 +1,4 @@
 // Licensed under the Apache-2.0 license
-
 use caliptra_builder::{
     firmware::{APP_WITH_UART, APP_WITH_UART_FPGA, FMC_WITH_UART},
     FwId, ImageOptions,
@@ -9,7 +8,9 @@ use caliptra_common::mailbox_api::{
     MailboxReqHeader,
 };
 use caliptra_error::CaliptraError;
-use caliptra_hw_model::{BootParams, DefaultHwModel, HwModel, InitParams, ModelError};
+use caliptra_hw_model::{
+    BootParams, DefaultHwModel, HwModel, InitParams, MboxBuffer, ModelError, SocManager,
+};
 use dpe::{
     commands::{Command, CommandHdr},
     response::{
@@ -181,9 +182,11 @@ pub fn execute_dpe_cmd(
     });
     mbox_cmd.populate_chksum().unwrap();
 
+    let mut buffer = MboxBuffer::default();
     let resp = model.mailbox_execute(
         u32::from(CommandId::INVOKE_DPE),
         mbox_cmd.as_bytes().unwrap(),
+        &mut buffer,
     );
     if let DpeResult::MboxCmdFailure(expected_err) = expected_result {
         assert_error(model, expected_err, resp.unwrap_err());
@@ -193,7 +196,7 @@ pub fn execute_dpe_cmd(
 
     assert!(resp.len() <= std::mem::size_of::<InvokeDpeResp>());
     let mut resp_hdr = InvokeDpeResp::default();
-    resp_hdr.as_bytes_mut()[..resp.len()].copy_from_slice(&resp);
+    resp_hdr.as_bytes_mut()[..resp.len()].copy_from_slice(resp);
 
     assert!(caliptra_common::checksum::verify_checksum(
         resp_hdr.hdr.chksum,
@@ -232,13 +235,19 @@ pub fn get_fmc_alias_cert(model: &mut DefaultHwModel) -> GetFmcAliasCertResp {
             &[],
         ),
     };
+
+    let mut buffer = MboxBuffer::default();
     let resp = model
-        .mailbox_execute(u32::from(CommandId::GET_FMC_ALIAS_CERT), payload.as_bytes())
+        .mailbox_execute(
+            u32::from(CommandId::GET_FMC_ALIAS_CERT),
+            payload.as_bytes(),
+            &mut buffer,
+        )
         .unwrap()
         .unwrap();
     assert!(resp.len() <= std::mem::size_of::<GetFmcAliasCertResp>());
     let mut fmc_resp = GetFmcAliasCertResp::default();
-    fmc_resp.as_bytes_mut()[..resp.len()].copy_from_slice(&resp);
+    fmc_resp.as_bytes_mut()[..resp.len()].copy_from_slice(resp);
     fmc_resp
 }
 
@@ -249,12 +258,17 @@ pub fn get_rt_alias_cert(model: &mut DefaultHwModel) -> GetRtAliasCertResp {
             &[],
         ),
     };
+    let mut buffer = MboxBuffer::default();
     let resp = model
-        .mailbox_execute(u32::from(CommandId::GET_RT_ALIAS_CERT), payload.as_bytes())
+        .mailbox_execute(
+            u32::from(CommandId::GET_RT_ALIAS_CERT),
+            payload.as_bytes(),
+            &mut buffer,
+        )
         .unwrap()
         .unwrap();
     assert!(resp.len() <= std::mem::size_of::<GetRtAliasCertResp>());
     let mut rt_resp = GetRtAliasCertResp::default();
-    rt_resp.as_bytes_mut()[..resp.len()].copy_from_slice(&resp);
+    rt_resp.as_bytes_mut()[..resp.len()].copy_from_slice(resp);
     rt_resp
 }

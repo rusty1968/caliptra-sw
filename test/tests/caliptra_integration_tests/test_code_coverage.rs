@@ -9,7 +9,7 @@ fn test_emu_coverage() {
     use caliptra_coverage::{calculator, collect_instr_pcs};
     use caliptra_emu_cpu::CoverageBitmaps;
     use caliptra_hw_model::HwModel;
-    use caliptra_hw_model::{BootParams, InitParams};
+    use caliptra_hw_model::{BootParams, InitParams, SocManager};
 
     const TRACE_PATH: &str = "/tmp/caliptra_coverage_trace.txt";
 

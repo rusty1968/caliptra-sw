@@ -6,7 +6,7 @@ use caliptra_builder::{
     ImageOptions,
 };
 use caliptra_common::RomBootStatus::{self, KatStarted};
-use caliptra_hw_model::{DeviceLifecycle, HwModel, SecurityState};
+use caliptra_hw_model::{DeviceLifecycle, HwModel, SecurityState, SocManager};
 
 #[test]
 fn test_wdt_activation_and_stoppage() {

@@ -3,7 +3,7 @@
 use crate::bus_logger::{BusLogger, LogFile, NullBus};
 use crate::trace_path_or_env;
 use crate::EtrngResponse;
-use crate::{HwModel, TrngMode};
+use crate::{HwModel, SocManager, TrngMode};
 use caliptra_emu_bus::Bus;
 use caliptra_emu_types::{RvAddr, RvData, RvSize};
 use caliptra_hw_model_types::ErrorInjectionMode;
@@ -111,10 +111,28 @@ fn ahb_txn_size(ty: AhbTxnType) -> RvSize {
         AhbTxnType::ReadU64 | AhbTxnType::WriteU64 => RvSize::Word,
     }
 }
-
-impl crate::HwModel for ModelVerilated {
+impl SocManager for ModelVerilated {
     type TBus<'a> = VerilatedApbBus<'a>;
 
+    const SOC_IFC_ADDR: u32 = 0x3003_0000;
+    const SOC_IFC_TRNG_ADDR: u32 = 0x3003_0000;
+    const SOC_SHA512_ACC_ADDR: u32 = 0x3002_1000;
+    const SOC_MBOX_ADDR: u32 = 0x3002_0000;
+
+    const MAX_WAIT_CYCLES: u32 = 20_000_000;
+
+    fn apb_bus(&mut self) -> Self::TBus<'_> {
+        VerilatedApbBus { model: self }
+    }
+
+    fn wait_for_one_cycle(&mut self) {
+        self.process_trng_start();
+        self.v.next_cycle_high(1);
+        self.process_trng_end();
+    }
+}
+
+impl HwModel for ModelVerilated {
     fn new_unbooted(params: crate::InitParams) -> Result<Self, Box<dyn std::error::Error>>
     where
         Self: Sized,
@@ -250,16 +268,6 @@ impl crate::HwModel for ModelVerilated {
 
     fn trng_mode(&self) -> TrngMode {
         self.trng_mode
-    }
-
-    fn apb_bus(&mut self) -> Self::TBus<'_> {
-        VerilatedApbBus { model: self }
-    }
-
-    fn step(&mut self) {
-        self.process_trng_start();
-        self.v.next_cycle_high(1);
-        self.process_trng_end();
     }
 
     fn output(&mut self) -> &mut crate::Output {

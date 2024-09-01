@@ -6,8 +6,8 @@ use caliptra_builder::ImageOptions;
 use caliptra_common::mailbox_api::CommandId;
 use caliptra_common::RomBootStatus::*;
 use caliptra_drivers::CaliptraError;
-use caliptra_hw_model::DeviceLifecycle;
-use caliptra_hw_model::{BootParams, Fuses, HwModel, InitParams, SecurityState};
+use caliptra_hw_model::{BootParams, Fuses, HwModel, InitParams, SecurityState, SocManager};
+use caliptra_hw_model::{DeviceLifecycle, MboxBuffer};
 use caliptra_test::swap_word_bytes_inplace;
 use openssl::sha::sha384;
 use zerocopy::AsBytes;
@@ -62,7 +62,7 @@ fn test_warm_reset_success() {
 
     // Wait for boot
     while !hw.soc_ifc().cptra_flow_status().read().ready_for_runtime() {
-        hw.step();
+        hw.wait_for_one_cycle();
     }
 
     // Perform warm reset
@@ -75,7 +75,7 @@ fn test_warm_reset_success() {
 
     // Wait for boot
     while !hw.soc_ifc().cptra_flow_status().read().ready_for_runtime() {
-        hw.step();
+        hw.wait_for_one_cycle();
     }
 }
 
@@ -97,7 +97,7 @@ fn test_warm_reset_during_cold_boot_before_image_validation() {
 
     // Wait for error
     while hw.soc_ifc().cptra_fw_error_fatal().read() == 0 {
-        hw.step();
+        hw.wait_for_one_cycle();
     }
     assert_eq!(
         hw.soc_ifc().cptra_fw_error_fatal().read(),
@@ -125,7 +125,7 @@ fn test_warm_reset_during_cold_boot_during_image_validation() {
 
     // Step for few times to land in image validation
     for _ in 0..1000 {
-        hw.step();
+        hw.wait_for_one_cycle();
     }
 
     // Perform a warm reset
@@ -133,7 +133,7 @@ fn test_warm_reset_during_cold_boot_during_image_validation() {
 
     // Wait for error
     while hw.soc_ifc().cptra_fw_error_fatal().read() == 0 {
-        hw.step();
+        hw.wait_for_one_cycle();
     }
     assert_eq!(
         hw.soc_ifc().cptra_fw_error_fatal().read(),
@@ -162,7 +162,7 @@ fn test_warm_reset_during_cold_boot_after_image_validation() {
 
     // Wait for error
     while hw.soc_ifc().cptra_fw_error_fatal().read() == 0 {
-        hw.step();
+        hw.wait_for_one_cycle();
     }
     assert_eq!(
         hw.soc_ifc().cptra_fw_error_fatal().read(),
@@ -198,7 +198,8 @@ fn test_warm_reset_during_update_reset() {
         hw.step_until_boot_status(UpdateResetStarted.into(), false);
     }
 
-    assert_eq!(hw.finish_mailbox_execute(), Ok(None));
+    let mut buffer = MboxBuffer::default();
+    assert_eq!(hw.finish_mailbox_execute(&mut buffer), Ok(None));
 
     // Step till after last step in update reset is complete
     hw.step_until_boot_status(UpdateResetLoadImageComplete.into(), true);
@@ -208,7 +209,7 @@ fn test_warm_reset_during_update_reset() {
 
     // Wait for error
     while hw.soc_ifc().cptra_fw_error_fatal().read() == 0 {
-        hw.step();
+        hw.wait_for_one_cycle();
     }
     assert_eq!(
         hw.soc_ifc().cptra_fw_error_fatal().read(),

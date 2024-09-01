@@ -16,6 +16,7 @@ Abstract:
 pub mod bus;
 mod exception;
 mod macros;
+pub mod mmio;
 
 pub use crate::exception::{RvException, RvExceptionCause};
 

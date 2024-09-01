@@ -6,7 +6,9 @@ use crate::common;
 use caliptra_builder::firmware::ROM_WITH_FIPS_TEST_HOOKS;
 use caliptra_common::mailbox_api::*;
 use caliptra_drivers::FipsTestHook;
-use caliptra_hw_model::{BootParams, DeviceLifecycle, HwModel, InitParams, SecurityState};
+use caliptra_hw_model::{
+    BootParams, DeviceLifecycle, HwModel, InitParams, SecurityState, SocManager,
+};
 use caliptra_image_crypto::OsslCrypto as Crypto;
 use caliptra_image_gen::ImageGenerator;
 use caliptra_image_types::ImageManifest;

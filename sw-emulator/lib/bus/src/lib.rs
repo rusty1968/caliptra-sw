@@ -14,7 +14,6 @@ Abstract:
 mod clock;
 mod dynamic_bus;
 mod mem;
-mod mmio;
 mod ram;
 mod register;
 mod register_array;
@@ -23,7 +22,6 @@ pub mod testing;
 
 pub use crate::clock::{ActionHandle, Clock, Timer, TimerAction};
 pub use crate::dynamic_bus::DynamicBus;
-pub use crate::mmio::BusMmio;
 pub use crate::ram::Ram;
 pub use crate::register::{
     ReadOnlyMemory, ReadOnlyRegister, ReadWriteMemory, ReadWriteRegister, Register,
@@ -32,3 +30,4 @@ pub use crate::register::{
 pub use crate::register_array::{ReadWriteRegisterArray, RegisterArray};
 pub use crate::rom::Rom;
 pub use caliptra_emu_types::bus::{Bus, BusError};
+pub use caliptra_emu_types::mmio::BusMmio;

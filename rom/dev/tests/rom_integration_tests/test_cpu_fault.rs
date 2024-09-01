@@ -1,7 +1,7 @@
 // Licensed under the Apache-2.0 license
 
 use caliptra_builder::firmware;
-use caliptra_hw_model::{BootParams, HwModel, InitParams};
+use caliptra_hw_model::{BootParams, HwModel, InitParams, SocManager};
 use elf::{endian::LittleEndian, ElfBytes};
 
 #[test]

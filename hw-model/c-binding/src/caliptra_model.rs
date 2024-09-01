@@ -1,7 +1,7 @@
 // Licensed under the Apache-2.0 license
 
 use caliptra_emu_bus::Bus;
-use caliptra_hw_model::{DefaultHwModel, HwModel, InitParams, SecurityState};
+use caliptra_hw_model::{DefaultHwModel, HwModel, InitParams, SecurityState, SocManager};
 use std::ffi::*;
 use std::slice;
 
@@ -128,7 +128,7 @@ pub unsafe extern "C" fn caliptra_model_ready_for_fw(model: *mut caliptra_model)
 pub unsafe extern "C" fn caliptra_model_step(model: *mut caliptra_model) -> c_int {
     // Parameter check
     assert!(!model.is_null());
-    (*{ model as *mut DefaultHwModel }).step();
+    (*{ model as *mut DefaultHwModel }).wait_for_one_cycle();
 
     CALIPTRA_MODEL_STATUS_OK
 }

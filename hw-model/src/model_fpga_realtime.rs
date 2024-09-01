@@ -18,7 +18,7 @@ use uio::{UioDevice, UioError};
 
 use crate::EtrngResponse;
 use crate::Output;
-use crate::{HwModel, SecurityState, TrngMode};
+use crate::{HwModel, SecurityState, SocManager, TrngMode};
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum OpenOcdError {
@@ -322,9 +322,27 @@ impl ModelFpgaRealtime {
 struct SendPtr(*mut u32);
 unsafe impl Send for SendPtr {}
 
-impl HwModel for ModelFpgaRealtime {
+impl SocManager for ModelFpgaRealtime {
     type TBus<'a> = FpgaRealtimeBus<'a>;
 
+    const SOC_IFC_ADDR: u32 = 0x3003_0000;
+    const SOC_IFC_TRNG_ADDR: u32 = 0x3003_0000;
+    const SOC_SHA512_ACC_ADDR: u32 = 0x3002_1000;
+    const SOC_MBOX_ADDR: u32 = 0x3002_0000;
+
+    const MAX_WAIT_CYCLES: u32 = 20_000_000;
+
+    fn apb_bus(&mut self) -> Self::TBus<'_> {
+        FpgaRealtimeBus {
+            mmio: self.mmio,
+            phantom: Default::default(),
+        }
+    }
+    fn step(&mut self) {
+        self.handle_log();
+    }
+}
+impl HwModel for ModelFpgaRealtime {
     fn new_unbooted(params: crate::InitParams) -> Result<Self, Box<dyn std::error::Error>>
     where
         Self: Sized,
@@ -446,17 +464,6 @@ impl HwModel for ModelFpgaRealtime {
 
     fn trng_mode(&self) -> TrngMode {
         self.trng_mode
-    }
-
-    fn apb_bus(&mut self) -> Self::TBus<'_> {
-        FpgaRealtimeBus {
-            mmio: self.mmio,
-            phantom: Default::default(),
-        }
-    }
-
-    fn step(&mut self) {
-        self.handle_log();
     }
 
     fn output(&mut self) -> &mut crate::Output {

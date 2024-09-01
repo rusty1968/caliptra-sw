@@ -4,7 +4,8 @@ use crate::common::{assert_error, run_rt_test};
 use caliptra_common::mailbox_api::{
     CommandId, LmsVerifyReq, MailboxReq, MailboxReqHeader, MailboxRespHeader,
 };
-use caliptra_hw_model::{HwModel, ModelError, ShaAccMode};
+use caliptra_hw_model::MboxBuffer;
+use caliptra_hw_model::{HwModel, ModelError, ShaAccMode, SocManager};
 use caliptra_lms_types::{LmotsAlgorithmType, LmsAlgorithmType, LmsPublicKey, LmsSignature};
 use caliptra_runtime::RtBootStatus;
 use zerocopy::{AsBytes, FromBytes, LayoutVerified};
@@ -789,9 +790,14 @@ fn execute_lms_cmd<T: HwModel>(
         .compute_sha512_acc_digest(message, ShaAccMode::Sha384Stream)
         .unwrap();
 
+    let mut buffer = MboxBuffer::default();
     // Send LMS verify command
     let resp = model
-        .mailbox_execute(u32::from(CommandId::LMS_VERIFY), cmd.as_bytes().unwrap())?
+        .mailbox_execute(
+            u32::from(CommandId::LMS_VERIFY),
+            cmd.as_bytes().unwrap(),
+            &mut buffer,
+        )?
         .expect("We should have received a response");
 
     let resp_hdr: &MailboxRespHeader =

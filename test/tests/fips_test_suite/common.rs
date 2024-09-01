@@ -4,7 +4,9 @@ use caliptra_builder::firmware::{APP_WITH_UART, FMC_WITH_UART};
 use caliptra_builder::{version, ImageOptions};
 use caliptra_common::mailbox_api::*;
 use caliptra_drivers::FipsTestHook;
-use caliptra_hw_model::{BootParams, DefaultHwModel, HwModel, InitParams, ModelError, ShaAccMode};
+use caliptra_hw_model::{
+    BootParams, DefaultHwModel, HwModel, InitParams, ModelError, ShaAccMode, SocManager,
+};
 use caliptra_test::swap_word_bytes_inplace;
 use dpe::{
     commands::*,

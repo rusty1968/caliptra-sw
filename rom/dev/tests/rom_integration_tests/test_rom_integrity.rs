@@ -5,7 +5,7 @@ use caliptra_builder::{
     ImageOptions,
 };
 use caliptra_error::CaliptraError;
-use caliptra_hw_model::{BootParams, HwModel, InitParams};
+use caliptra_hw_model::{BootParams, HwModel, InitParams, SocManager};
 use caliptra_image_types::RomInfo;
 use zerocopy::{AsBytes, FromBytes};
 

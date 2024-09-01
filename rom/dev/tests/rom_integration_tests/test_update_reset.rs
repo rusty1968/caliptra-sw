@@ -15,7 +15,7 @@ use caliptra_common::mailbox_api::CommandId;
 use caliptra_common::RomBootStatus::*;
 use caliptra_drivers::WarmResetEntry4;
 use caliptra_error::CaliptraError;
-use caliptra_hw_model::{BootParams, HwModel, InitParams};
+use caliptra_hw_model::{BootParams, DefaultHwModel, HwModel, InitParams, MboxBuffer, SocManager};
 use caliptra_image_fake_keys::VENDOR_CONFIG_KEY_0;
 use caliptra_image_gen::ImageGeneratorVendorConfig;
 use zerocopy::{AsBytes, FromBytes};
@@ -60,12 +60,14 @@ fn test_update_reset_success() {
         hw.step_until_boot_status(UpdateResetStarted.into(), false);
     }
 
-    assert_eq!(hw.finish_mailbox_execute(), Ok(None));
+    let mut buffer = MboxBuffer::default();
+    assert_eq!(hw.finish_mailbox_execute(&mut buffer), Ok(None));
 
     hw.step_until_boot_status(UpdateResetComplete.into(), true);
 
     // Exit test-fmc with success
-    hw.mailbox_execute(0x1000_000C, &[]).unwrap();
+    let mut buffer = MboxBuffer::default();
+    hw.mailbox_execute(0x1000_000C, &[], &mut buffer).unwrap();
 
     hw.step_until_exit_success().unwrap();
 }
@@ -95,7 +97,8 @@ fn test_update_reset_no_mailbox_cmd() {
 
     // This command tells the test-fmc to do an update reset after clearing
     // itself from the mailbox.
-    hw.mailbox_execute(TEST_FMC_CMD_RESET_FOR_UPDATE, &[])
+    let mut buffer = MboxBuffer::default();
+    hw.mailbox_execute(TEST_FMC_CMD_RESET_FOR_UPDATE, &[], &mut buffer)
         .unwrap();
 
     hw.step_until_boot_status(KatStarted.into(), true);
@@ -109,7 +112,8 @@ fn test_update_reset_no_mailbox_cmd() {
         u32::from(CaliptraError::ROM_UPDATE_RESET_FLOW_MAILBOX_ACCESS_FAILURE)
     );
 
-    let _ = hw.mailbox_execute(0xDEADBEEF, &[]);
+    let mut buffer = MboxBuffer::default();
+    let _ = hw.mailbox_execute(0xDEADBEEF, &[], &mut buffer);
     hw.step_until_exit_success().unwrap();
 
     assert_eq!(
@@ -149,7 +153,8 @@ fn test_update_reset_non_fw_load_cmd() {
     hw.step_until_boot_status(KatComplete.into(), true);
     hw.step_until_boot_status(UpdateResetStarted.into(), false);
 
-    let _ = hw.mailbox_execute(0xDEADBEEF, &[]);
+    let mut buffer = MboxBuffer::default();
+    let _ = hw.mailbox_execute(0xDEADBEEF, &[], &mut buffer);
     hw.step_until_exit_success().unwrap();
 
     assert_eq!(
@@ -194,8 +199,9 @@ fn test_update_reset_verify_image_failure() {
     hw.step_until_boot_status(KatComplete.into(), true);
     hw.step_until_boot_status(UpdateResetStarted.into(), false);
 
+    let mut buffer = caliptra_hw_model::MboxBuffer::default();
     assert_eq!(
-        hw.finish_mailbox_execute(),
+        hw.finish_mailbox_execute(&mut buffer),
         Err(caliptra_hw_model::ModelError::MailboxCmdFailed(
             CaliptraError::IMAGE_VERIFIER_ERR_MANIFEST_MARKER_MISMATCH.into()
         ))
@@ -260,11 +266,14 @@ fn test_update_reset_boot_status() {
 
     hw.step_until_boot_status(UpdateResetComplete.into(), true);
 
-    assert_eq!(hw.finish_mailbox_execute(), Ok(None));
+    let mut buffer = MboxBuffer::default();
+    assert_eq!(hw.finish_mailbox_execute(&mut buffer), Ok(None));
 
     // Tell the test-fmc to "exit with success" (necessary because the FMC is in
     // interactive mode)
-    hw.mailbox_execute(0x1000_000C, &[]).unwrap();
+
+    let mut buffer = MboxBuffer::default();
+    hw.mailbox_execute(0x1000_000C, &[], &mut buffer).unwrap();
 
     hw.step_until_exit_success().unwrap();
 }
@@ -286,7 +295,7 @@ fn test_update_reset_vendor_ecc_pub_key_idx_dv_mismatch() {
         image_options,
     )
     .unwrap();
-    let mut hw = caliptra_hw_model::new(
+    let mut hw: DefaultHwModel = caliptra_hw_model::new(
         InitParams {
             rom: &rom,
             ..Default::default()
@@ -322,15 +331,17 @@ fn test_update_reset_vendor_ecc_pub_key_idx_dv_mismatch() {
 
     hw.step_until_boot_status(UpdateResetStarted.into(), true);
 
+    let mut resp_bytes = MboxBuffer::default();
     assert_eq!(
-        hw.finish_mailbox_execute(),
+        hw.finish_mailbox_execute(&mut resp_bytes),
         Err(caliptra_hw_model::ModelError::MailboxCmdFailed(
             CaliptraError::IMAGE_VERIFIER_ERR_UPDATE_RESET_VENDOR_ECC_PUB_KEY_IDX_MISMATCH.into()
         ))
     );
 
     // Exit test-fmc with success
-    hw.mailbox_execute(0x1000_000C, &[]).unwrap();
+    let mut buffer = MboxBuffer::default();
+    hw.mailbox_execute(0x1000_000C, &[], &mut buffer).unwrap();
 
     hw.step_until_exit_success().unwrap();
 
@@ -400,7 +411,8 @@ fn test_update_reset_vendor_lms_pub_key_idx_dv_mismatch() {
     );
 
     // Exit test-fmc with success
-    hw.mailbox_execute(0x1000_000C, &[]).unwrap();
+    let mut buffer = MboxBuffer::default();
+    hw.mailbox_execute(0x1000_000C, &[], &mut buffer).unwrap();
 
     hw.step_until_exit_success().unwrap();
 
@@ -447,23 +459,33 @@ fn test_check_rom_update_reset_status_reg() {
         hw.step_until_boot_status(UpdateResetStarted.into(), false);
     }
 
-    assert_eq!(hw.finish_mailbox_execute(), Ok(None));
+    assert_eq!(
+        hw.finish_mailbox_execute(&mut MboxBuffer::default()),
+        Ok(None)
+    );
 
     hw.step_until_boot_status(UpdateResetComplete.into(), true);
 
-    let warmresetentry4_array = hw.mailbox_execute(0x1000_000D, &[]).unwrap().unwrap();
+    let mut warmresetentry4_array = MboxBuffer::default();
+    hw.mailbox_execute(0x1000_000D, &[], &mut warmresetentry4_array)
+        .unwrap()
+        .unwrap();
     let mut warmresetentry4_offset = core::mem::size_of::<u32>() * 8; // Skip first four entries
 
     // Check RomUpdateResetStatus datavault value.
-    let warmresetentry4_id =
-        u32::read_from_prefix(warmresetentry4_array[warmresetentry4_offset..].as_bytes()).unwrap();
+    let warmresetentry4_id = u32::read_from_prefix(
+        warmresetentry4_array.data.as_slice()[warmresetentry4_offset..].as_bytes(),
+    )
+    .unwrap();
     assert_eq!(
         warmresetentry4_id,
         WarmResetEntry4::RomUpdateResetStatus as u32
     );
     warmresetentry4_offset += core::mem::size_of::<u32>();
-    let warmresetentry4_value =
-        u32::read_from_prefix(warmresetentry4_array[warmresetentry4_offset..].as_bytes()).unwrap();
+    let warmresetentry4_value = u32::read_from_prefix(
+        warmresetentry4_array.data.as_slice()[warmresetentry4_offset..].as_bytes(),
+    )
+    .unwrap();
     assert_eq!(warmresetentry4_value, u32::from(UpdateResetComplete));
 }
 
@@ -526,7 +548,7 @@ fn test_update_reset_max_fw_image() {
     )
     .unwrap();
 
-    let mut hw = caliptra_hw_model::new(
+    let mut hw: DefaultHwModel = caliptra_hw_model::new(
         InitParams {
             rom: &rom,
             ..Default::default()
@@ -566,7 +588,8 @@ fn test_update_reset_max_fw_image() {
         hw.step_until_boot_status(UpdateResetStarted.into(), false);
     }
 
-    assert_eq!(hw.finish_mailbox_execute(), Ok(None));
+    let mut resp_bytes = MboxBuffer::default();
+    assert_eq!(hw.finish_mailbox_execute(&mut resp_bytes), Ok(None));
 
     hw.step_until_boot_status(UpdateResetComplete.into(), true);
 
@@ -590,7 +613,10 @@ fn test_update_reset_max_fw_image() {
     buf.append(&mut updated_image_bundle.fmc.to_vec());
     buf.append(&mut updated_image_bundle.runtime.to_vec());
 
-    let iccm_cmp: Vec<u8> = hw.mailbox_execute(0x1000_000E, &buf).unwrap().unwrap();
-    assert_eq!(iccm_cmp.len(), 1);
-    assert_eq!(iccm_cmp[0], 0);
+    let mut resp_buffer = MboxBuffer::default();
+    hw.mailbox_execute(0x1000_000E, &buf, &mut resp_buffer)
+        .unwrap()
+        .unwrap();
+    assert_eq!(resp_buffer.data.len(), 1);
+    assert_eq!(resp_buffer.data[0], 0);
 }
