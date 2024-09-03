@@ -1,7 +1,6 @@
 // Licensed under the Apache-2.0 license
 
 use caliptra_api::{self as api};
-use caliptra_api_types as api_types;
 
 use caliptra_hw_model_types::{
     ErrorInjectionMode, EtrngResponse, HexBytes, HexSlice, RandomEtrngResponses, RandomNibbles,
@@ -14,7 +13,7 @@ use std::{
     fmt::Display,
     io::{stdout, ErrorKind, Write},
 };
-use zerocopy::{AsBytes, FromBytes, LayoutVerified, Unalign};
+use zerocopy::{AsBytes, LayoutVerified, Unalign};
 
 use caliptra_registers::soc_ifc::regs::{
     CptraItrngEntropyConfig0WriteVal, CptraItrngEntropyConfig1WriteVal,
@@ -38,7 +37,6 @@ mod model_fpga_realtime;
 mod output;
 mod rv32_builder;
 
-pub use api_types::{DeviceLifecycle, Fuses, SecurityState, U4};
 pub use caliptra_emu_bus::BusMmio;
 use output::ExitStatus;
 pub use output::Output;
@@ -328,6 +326,12 @@ impl From<CaliptraApiError> for ModelError {
                 expected_max,
                 actual,
             },
+            CaliptraApiError::UploadFirmwareUnexpectedResponse => {
+                ModelError::UploadFirmwareUnexpectedResponse
+            }
+            CaliptraApiError::UploadMeasurementResponseError => {
+                ModelError::UploadMeasurementResponseError
+            }
         }
     }
 }
@@ -401,12 +405,6 @@ impl Display for ModelError {
         }
     }
 }
-
-/// Firmware Load Command Opcode
-const FW_LOAD_CMD_OPCODE: u32 = 0x4657_4C44;
-
-/// Stash Measurement Command Opcode.
-const STASH_MEASUREMENT_CMD_OPCODE: u32 = 0x4D45_4153;
 
 // Represents a emulator or simulation of the caliptra hardware, to be called
 // from tests. Typically, test cases should use [`crate::new()`] to create a model
@@ -716,7 +714,7 @@ pub trait HwModel: SocManager {
         SocManager::mailbox_exec(self, cmd, buf, resp_data).map_err(ModelError::from)
     }
 
-    fn mailbox_execute_alloc(
+    fn mailbox_execute_heap(
         &mut self,
         cmd: u32,
         buf: &[u8],
@@ -743,6 +741,11 @@ pub trait HwModel: SocManager {
         SocManager::start_mailbox_exec(self, cmd, buf).map_err(ModelError::from)
     }
 
+    fn finish_mailbox_execute_heap(&mut self) -> std::result::Result<Option<Vec<u8>>, ModelError> {
+        let mut resp_buffer = MboxBuffer::default();
+        self.finish_mailbox_execute(&mut resp_buffer)?;
+        Ok(Some(resp_buffer.as_slice().to_vec()))
+    }
     /// Wait for the response to a previous call to `start_mailbox_execute()`.
     fn finish_mailbox_execute<'r>(
         &mut self,
@@ -837,14 +840,7 @@ pub trait HwModel: SocManager {
 
     /// Upload firmware to the mailbox.
     fn upload_firmware(&mut self, firmware: &[u8]) -> Result<(), ModelError> {
-        let mut resp_bytes = MboxBuffer::default();
-        let response =
-            SocManager::mailbox_exec(self, FW_LOAD_CMD_OPCODE, firmware, &mut resp_bytes)
-                .map_err(ModelError::from)?;
-        if response.is_some() {
-            return Err(ModelError::UploadFirmwareUnexpectedResponse);
-        }
-        Ok(())
+        SocManager::upload_fw(self, firmware).map_err(ModelError::from)
     }
 
     fn wait_for_mailbox_receive<'a, 'b>(
@@ -866,36 +862,7 @@ pub trait HwModel: SocManager {
 
     /// Upload measurement to the mailbox.
     fn upload_measurement(&mut self, measurement: &[u8]) -> Result<(), ModelError> {
-        let mut response = MboxBuffer::default();
-        SocManager::mailbox_exec(
-            self,
-            STASH_MEASUREMENT_CMD_OPCODE,
-            measurement,
-            &mut response,
-        )
-        .map_err(ModelError::from)?;
-
-        // We expect a response
-        //        let response = response.ok_or(ModelError::UploadMeasurementResponseError)?;
-
-        // Get response as a response header struct
-        let response = api::mailbox::StashMeasurementResp::read_from(response.data.as_slice())
-            .ok_or(ModelError::UploadMeasurementResponseError)?;
-
-        // Verify checksum and FIPS status
-        if !api::verify_checksum(
-            response.hdr.chksum,
-            0x0,
-            &response.as_bytes()[core::mem::size_of_val(&response.hdr.chksum)..],
-        ) {
-            return Err(ModelError::UploadMeasurementResponseError);
-        }
-
-        if response.hdr.fips_status != api::mailbox::MailboxRespHeader::FIPS_STATUS_APPROVED {
-            return Err(ModelError::UploadMeasurementResponseError);
-        }
-
-        Ok(())
+        SocManager::upload_meas(self, measurement).map_err(ModelError::from)
     }
 }
 

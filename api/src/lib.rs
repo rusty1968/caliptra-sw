@@ -8,6 +8,8 @@ mod checksum;
 pub mod mailbox;
 pub mod prelude;
 
+use caliptra_emu_types::bus::Bus;
+use caliptra_emu_types::mmio::BusMmio;
 use zerocopy::{AsBytes, FromBytes};
 
 use caliptra_api_types::Fuses;
@@ -17,6 +19,8 @@ pub use capabilities::Capabilities;
 pub use prelude::*;
 
 use caliptra_registers::mbox::enums::{MboxFsmE, MboxStatusE};
+
+use crate::mailbox::StashMeasurementResp;
 
 pub struct MailboxRequest<'a> {
     pub cmd: u32,
@@ -377,6 +381,50 @@ pub trait SocManager {
         mbox_read_fifo(self.soc_mbox(), buffer)?;
         Ok(cmd)
     }
+
+    /// Upload firmware to the mailbox.
+    fn upload_fw(&mut self, firmware: &[u8]) -> Result<(), CaliptraApiError> {
+        let mut resp_bytes = MboxBuffer::default();
+        let response = SocManager::mailbox_exec(
+            self,
+            CommandId::FIRMWARE_LOAD.into(),
+            firmware,
+            &mut resp_bytes,
+        )?;
+        if response.is_some() {
+            return Err(CaliptraApiError::UploadFirmwareUnexpectedResponse);
+        }
+        Ok(())
+    }
+
+    /// Upload measurement to the mailbox.
+    fn upload_meas(&mut self, measurement: &[u8]) -> Result<(), CaliptraApiError> {
+        let mut response = MboxBuffer::default();
+        self.mailbox_exec(
+            CommandId::STASH_MEASUREMENT.into(),
+            measurement,
+            &mut response,
+        )?;
+
+        // Get response as a response header struct
+        let response = StashMeasurementResp::read_from(response.data.as_slice())
+            .ok_or(CaliptraApiError::UploadMeasurementResponseError)?;
+
+        // Verify checksum and FIPS status
+        if !verify_checksum(
+            response.hdr.chksum,
+            0x0,
+            &response.as_bytes()[core::mem::size_of_val(&response.hdr.chksum)..],
+        ) {
+            return Err(CaliptraApiError::UploadMeasurementResponseError);
+        }
+
+        if response.hdr.fips_status != MailboxRespHeader::FIPS_STATUS_APPROVED {
+            return Err(CaliptraApiError::UploadMeasurementResponseError);
+        }
+
+        Ok(())
+    }
 }
 #[derive(Debug, Eq, PartialEq)]
 pub enum CaliptraApiError {
@@ -404,4 +452,6 @@ pub enum CaliptraApiError {
         expected_max: u32,
         actual: u32,
     },
+    UploadFirmwareUnexpectedResponse,
+    UploadMeasurementResponseError,
 }
