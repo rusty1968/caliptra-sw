@@ -5,7 +5,7 @@ use caliptra_common::capabilities::Capabilities;
 use caliptra_common::mailbox_api::{
     CapabilitiesResp, CommandId, MailboxReqHeader, MailboxRespHeader,
 };
-use caliptra_hw_model::{Fuses, HwModel};
+use caliptra_hw_model::{Fuses, HwModel, MboxBuffer};
 use zerocopy::{AsBytes, FromBytes};
 
 use crate::helpers;
@@ -19,8 +19,13 @@ fn test_capabilities() {
         chksum: caliptra_common::checksum::calc_checksum(u32::from(CommandId::CAPABILITIES), &[]),
     };
 
+    let mut response = MboxBuffer::default();
     let response = hw
-        .mailbox_execute(CommandId::CAPABILITIES.into(), payload.as_bytes())
+        .mailbox_execute(
+            CommandId::CAPABILITIES.into(),
+            payload.as_bytes(),
+            &mut response,
+        )
         .unwrap()
         .unwrap();
 

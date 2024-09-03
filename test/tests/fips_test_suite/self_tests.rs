@@ -8,7 +8,7 @@ use caliptra_builder::ImageOptions;
 use caliptra_common::mailbox_api::*;
 use caliptra_drivers::CaliptraError;
 use caliptra_drivers::FipsTestHook;
-use caliptra_hw_model::{BootParams, HwModel, InitParams, ModelError, ShaAccMode};
+use caliptra_hw_model::{BootParams, HwModel, InitParams, ModelError, ShaAccMode, SocManager};
 use common::*;
 use zerocopy::AsBytes;
 

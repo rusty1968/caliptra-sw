@@ -1,7 +1,7 @@
 // Licensed under the Apache-2.0 license
 
 use caliptra_emu_bus::Bus;
-use caliptra_hw_model::{DefaultHwModel, HwModel, InitParams, SecurityState};
+use caliptra_hw_model::{DefaultHwModel, HwModel, InitParams, SecurityState, SocManager};
 use std::ffi::*;
 use std::slice;
 

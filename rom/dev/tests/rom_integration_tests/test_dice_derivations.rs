@@ -1,5 +1,6 @@
 // Licensed under the Apache-2.0 license
 
+use crate::helpers;
 use caliptra_builder::firmware;
 use caliptra_builder::firmware::rom_tests::TEST_FMC_WITH_UART;
 use caliptra_builder::firmware::APP_WITH_UART;
@@ -10,8 +11,7 @@ use caliptra_hw_model::BootParams;
 use caliptra_hw_model::Fuses;
 use caliptra_hw_model::HwModel;
 use caliptra_hw_model::InitParams;
-
-use crate::helpers;
+use caliptra_hw_model::SocManager;
 
 #[test]
 fn test_cold_reset_status_reporting() {

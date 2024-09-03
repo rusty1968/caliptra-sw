@@ -6,8 +6,8 @@ use caliptra_builder::ImageOptions;
 use caliptra_common::mailbox_api::CommandId;
 use caliptra_common::RomBootStatus::*;
 use caliptra_drivers::CaliptraError;
-use caliptra_hw_model::DeviceLifecycle;
-use caliptra_hw_model::{BootParams, Fuses, HwModel, InitParams, SecurityState};
+use caliptra_hw_model::{BootParams, Fuses, HwModel, InitParams, SecurityState, SocManager};
+use caliptra_hw_model::{DeviceLifecycle, MboxBuffer};
 use caliptra_test::swap_word_bytes_inplace;
 use openssl::sha::sha384;
 use zerocopy::AsBytes;
@@ -198,7 +198,8 @@ fn test_warm_reset_during_update_reset() {
         hw.step_until_boot_status(UpdateResetStarted.into(), false);
     }
 
-    assert_eq!(hw.finish_mailbox_execute(), Ok(None));
+    let mut buffer = MboxBuffer::default();
+    assert_eq!(hw.finish_mailbox_execute(&mut buffer), Ok(None));
 
     // Step till after last step in update reset is complete
     hw.step_until_boot_status(UpdateResetLoadImageComplete.into(), true);

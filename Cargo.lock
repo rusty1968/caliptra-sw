@@ -212,10 +212,19 @@ checksum = "14c189c53d098945499cdfa7ecc63567cf3886b3332b312a5b4585d8d3a6a610"
 name = "caliptra-api"
 version = "0.1.0"
 dependencies = [
+ "arrayvec",
  "bitflags 2.4.0",
+ "caliptra-api-types",
+ "caliptra-emu-types",
  "caliptra-error",
+ "caliptra-registers",
+ "ureg",
  "zerocopy",
 ]
+
+[[package]]
+name = "caliptra-api-types"
+version = "0.1.0"
 
 [[package]]
 name = "caliptra-auth-man-gen"
@@ -395,6 +404,7 @@ dependencies = [
 name = "caliptra-emu"
 version = "0.1.0"
 dependencies = [
+ "caliptra-api-types",
  "caliptra-emu-bus",
  "caliptra-emu-cpu",
  "caliptra-emu-periph",
@@ -459,6 +469,7 @@ dependencies = [
  "aes",
  "arrayref",
  "bitfield",
+ "caliptra-api-types",
  "caliptra-emu-bus",
  "caliptra-emu-cpu",
  "caliptra-emu-crypto",
@@ -478,6 +489,9 @@ dependencies = [
 [[package]]
 name = "caliptra-emu-types"
 version = "0.1.0"
+dependencies = [
+ "ureg",
+]
 
 [[package]]
 name = "caliptra-error"
@@ -524,6 +538,7 @@ dependencies = [
  "bit-vec",
  "bitfield",
  "caliptra-api",
+ "caliptra-api-types",
  "caliptra-builder",
  "caliptra-coverage",
  "caliptra-emu-bus",
@@ -569,6 +584,7 @@ dependencies = [
 name = "caliptra-hw-model-types"
 version = "0.1.0"
 dependencies = [
+ "caliptra-api-types",
  "rand",
 ]
 
@@ -854,6 +870,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "asn1",
+ "caliptra-api-types",
  "caliptra-builder",
  "caliptra-coverage",
  "caliptra-drivers",

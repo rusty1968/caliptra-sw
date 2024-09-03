@@ -10,7 +10,8 @@ use caliptra_builder::{
 use caliptra_common::{mailbox_api::CommandId, RomBootStatus::*};
 use caliptra_drivers::{Array4x12, CaliptraError};
 use caliptra_hw_model::{
-    BootParams, DeviceLifecycle, Fuses, HwModel, InitParams, ModelError, SecurityState,
+    BootParams, DeviceLifecycle, Fuses, HwModel, InitParams, MboxBuffer, ModelError, SecurityState,
+    SocManager,
 };
 
 const PUB_KEY_X: [u8; 48] = [
@@ -177,11 +178,13 @@ fn test_fake_rom_update_reset() {
     }
     hw.step_until_boot_status(UpdateResetComplete.into(), true);
 
-    assert_eq!(hw.finish_mailbox_execute(), Ok(None));
+    let mut _buffer = MboxBuffer::default();
+    assert_eq!(hw.finish_mailbox_execute(&mut _buffer), Ok(None));
 
     // Tell the test-fmc to "exit with success" (necessary because the FMC is in
     // interactive mode)
-    hw.mailbox_execute(0x1000_000C, &[]).unwrap();
+    let mut _buffer = MboxBuffer::default();
+    hw.mailbox_execute(0x1000_000C, &[], &mut _buffer).unwrap();
 
     hw.step_until_exit_success().unwrap();
 }

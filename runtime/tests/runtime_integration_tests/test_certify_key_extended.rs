@@ -4,7 +4,8 @@ use caliptra_common::mailbox_api::{
     AddSubjectAltNameReq, CertifyKeyExtendedFlags, CertifyKeyExtendedReq, CertifyKeyExtendedResp,
     CommandId, MailboxReq, MailboxReqHeader,
 };
-use caliptra_hw_model::HwModel;
+use caliptra_hw_model::MboxBuffer;
+use caliptra_hw_model::{HwModel, SocManager};
 use caliptra_runtime::{AddSubjectAltNameCmd, RtBootStatus};
 use dpe::{
     commands::{CertifyKeyCmd, CertifyKeyFlags},
@@ -37,10 +38,12 @@ fn test_dmtf_other_name_validation_fail() {
     });
     cmd.populate_chksum().unwrap();
 
+    let mut resp_bytes = MboxBuffer::default();
     let resp = model
         .mailbox_execute(
             u32::from(CommandId::ADD_SUBJECT_ALT_NAME),
             cmd.as_bytes().unwrap(),
+            &mut resp_bytes,
         )
         .unwrap_err();
 
@@ -70,10 +73,12 @@ fn test_dmtf_other_name_extension_present() {
     });
     cmd.populate_chksum().unwrap();
 
+    let mut resp_bytes = MboxBuffer::default();
     let _ = model
         .mailbox_execute(
             u32::from(CommandId::ADD_SUBJECT_ALT_NAME),
             cmd.as_bytes().unwrap(),
+            &mut resp_bytes,
         )
         .unwrap()
         .expect("We should have received a response");
@@ -91,10 +96,12 @@ fn test_dmtf_other_name_extension_present() {
     });
     cmd.populate_chksum().unwrap();
 
+    let mut resp_bytes = MboxBuffer::default();
     let resp = model
         .mailbox_execute(
             u32::from(CommandId::CERTIFY_KEY_EXTENDED),
             cmd.as_bytes().unwrap(),
+            &mut resp_bytes,
         )
         .unwrap()
         .expect("We should have received a response");
@@ -143,10 +150,12 @@ fn test_dmtf_other_name_extension_not_present() {
     });
     cmd.populate_chksum().unwrap();
 
+    let mut resp_bytes = MboxBuffer::default();
     let resp = model
         .mailbox_execute(
             u32::from(CommandId::CERTIFY_KEY_EXTENDED),
             cmd.as_bytes().unwrap(),
+            &mut resp_bytes,
         )
         .unwrap()
         .expect("We should have received a response");
@@ -170,10 +179,12 @@ fn test_dmtf_other_name_extension_not_present() {
     });
     cmd.populate_chksum().unwrap();
 
+    let mut resp_bytes = MboxBuffer::default();
     let _ = model
         .mailbox_execute(
             u32::from(CommandId::ADD_SUBJECT_ALT_NAME),
             cmd.as_bytes().unwrap(),
+            &mut resp_bytes,
         )
         .unwrap()
         .expect("We should have received a response");
@@ -186,10 +197,12 @@ fn test_dmtf_other_name_extension_not_present() {
     });
     cmd.populate_chksum().unwrap();
 
+    let mut resp_bytes = MboxBuffer::default();
     let resp = model
         .mailbox_execute(
             u32::from(CommandId::CERTIFY_KEY_EXTENDED),
             cmd.as_bytes().unwrap(),
+            &mut resp_bytes,
         )
         .unwrap()
         .expect("We should have received a response");

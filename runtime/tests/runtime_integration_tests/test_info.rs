@@ -12,7 +12,7 @@ use caliptra_common::{
         MailboxRespHeader,
     },
 };
-use caliptra_hw_model::{BootParams, DefaultHwModel, HwModel, InitParams};
+use caliptra_hw_model::{BootParams, DefaultHwModel, HwModel, InitParams, MboxBuffer};
 use caliptra_image_types::RomInfo;
 use core::mem::size_of;
 use zerocopy::{AsBytes, FromBytes};
@@ -75,8 +75,13 @@ fn test_fw_info() {
             chksum: caliptra_common::checksum::calc_checksum(u32::from(CommandId::FW_INFO), &[]),
         };
 
+        let mut resp_bytes = MboxBuffer::default();
         let resp = model
-            .mailbox_execute(u32::from(CommandId::FW_INFO), payload.as_bytes())
+            .mailbox_execute(
+                u32::from(CommandId::FW_INFO),
+                payload.as_bytes(),
+                &mut resp_bytes,
+            )
             .unwrap()
             .unwrap();
 
@@ -96,9 +101,10 @@ fn test_fw_info() {
         info
     };
 
-    let update_to = |model: &mut DefaultHwModel, image: &[u8]| {
+    let mut resp_bytes = MboxBuffer::default();
+    let mut update_to = |model: &mut DefaultHwModel, image: &[u8]| {
         model
-            .mailbox_execute(u32::from(CommandId::FIRMWARE_LOAD), image)
+            .mailbox_execute(u32::from(CommandId::FIRMWARE_LOAD), image, &mut resp_bytes)
             .unwrap();
 
         model.step_until_boot_status(RT_READY_FOR_COMMANDS, true);
@@ -163,8 +169,13 @@ fn test_idev_id_info() {
     let payload = MailboxReqHeader {
         chksum: caliptra_common::checksum::calc_checksum(u32::from(CommandId::GET_IDEV_INFO), &[]),
     };
+    let mut resp_bytes = MboxBuffer::default();
     let resp = model
-        .mailbox_execute(u32::from(CommandId::GET_IDEV_INFO), payload.as_bytes())
+        .mailbox_execute(
+            u32::from(CommandId::GET_IDEV_INFO),
+            payload.as_bytes(),
+            &mut resp_bytes,
+        )
         .unwrap()
         .unwrap();
     GetIdevInfoResp::read_from(resp.as_slice()).unwrap();
@@ -176,8 +187,13 @@ fn test_capabilities() {
     let payload = MailboxReqHeader {
         chksum: caliptra_common::checksum::calc_checksum(u32::from(CommandId::CAPABILITIES), &[]),
     };
+    let mut resp_bytes = MboxBuffer::default();
     let resp = model
-        .mailbox_execute(u32::from(CommandId::CAPABILITIES), payload.as_bytes())
+        .mailbox_execute(
+            u32::from(CommandId::CAPABILITIES),
+            payload.as_bytes(),
+            &mut resp_bytes,
+        )
         .unwrap()
         .unwrap();
     let capabilities_resp = CapabilitiesResp::read_from(resp.as_slice()).unwrap();

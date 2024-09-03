@@ -3,7 +3,7 @@
 use caliptra_builder::{firmware, ImageOptions};
 use caliptra_common::mailbox_api::{CommandId, GetLdevCertResp, MailboxReqHeader};
 use caliptra_drivers::{IdevidCertAttr, MfgFlags, X509KeyIdAlgo};
-use caliptra_hw_model::{DefaultHwModel, Fuses, HwModel};
+use caliptra_hw_model::{DefaultHwModel, Fuses, HwModel, MboxBuffer, SocManager};
 use caliptra_image_types::ImageBundle;
 use openssl::pkey::{PKey, Public};
 use openssl::x509::X509;
@@ -22,7 +22,8 @@ fn generate_csr(hw: &mut DefaultHwModel, image_bundle: &ImageBundle) -> Vec<u8> 
         .write(|_| flags.bits());
 
     // Download the CSR from the mailbox.
-    let downloaded = helpers::get_csr(hw).unwrap();
+    let mut buffer = MboxBuffer::default();
+    let downloaded = helpers::get_csr(hw, &mut buffer).unwrap();
 
     // Wait for uploading firmware.
     hw.step_until(|m| m.soc_ifc().cptra_flow_status().read().ready_for_fw());
@@ -37,7 +38,7 @@ fn generate_csr(hw: &mut DefaultHwModel, image_bundle: &ImageBundle) -> Vec<u8> 
         let uploaded = hex::decode(csr_str).unwrap();
         assert_eq!(uploaded, downloaded);
     }
-    downloaded
+    downloaded.to_vec()
 }
 
 #[test]
@@ -138,14 +139,15 @@ fn verify_key(
     };
 
     // Execute the command
+    let mut buffer = MboxBuffer::default();
     let resp = hw
-        .mailbox_execute(cmd_id, payload.as_bytes())
+        .mailbox_execute(cmd_id, payload.as_bytes(), &mut buffer)
         .unwrap()
         .unwrap();
 
     assert!(resp.len() <= std::mem::size_of::<GetLdevCertResp>());
     let mut cert_resp = GetLdevCertResp::default();
-    cert_resp.as_bytes_mut()[..resp.len()].copy_from_slice(&resp);
+    cert_resp.as_bytes_mut()[..resp.len()].copy_from_slice(resp);
 
     // Extract the certificate from the response
     let cert_der = &cert_resp.data[..(cert_resp.data_size as usize)];

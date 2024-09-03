@@ -1,7 +1,7 @@
 // Licensed under the Apache-2.0 license
 
 use caliptra_builder::firmware;
-use caliptra_hw_model::{BootParams, DefaultHwModel, HwModel, InitParams};
+use caliptra_hw_model::{BootParams, DefaultHwModel, HwModel, InitParams, SocManager};
 use caliptra_hw_model_types::ErrorInjectionMode;
 use caliptra_test_harness_types as harness;
 
