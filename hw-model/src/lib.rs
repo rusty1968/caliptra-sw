@@ -1,6 +1,6 @@
 // Licensed under the Apache-2.0 license
 
-use caliptra_api::{self as api, CaliptraApiError};
+use caliptra_api::{self as api};
 use caliptra_api_types as api_types;
 
 use caliptra_hw_model_types::{
@@ -25,6 +25,8 @@ use sha2::Digest;
 
 pub mod mmio;
 mod model_emulated;
+pub mod prelude;
+pub use prelude::*;
 
 mod bus_logger;
 #[cfg(feature = "verilator")]
@@ -36,16 +38,10 @@ mod model_fpga_realtime;
 mod output;
 mod rv32_builder;
 
-//pub mod helpers;
-
-pub use api::{mbox_read_fifo, mbox_write_fifo};
-pub use api::{MailboxRecvTxn, MboxBuffer, SocManager};
 pub use api_types::{DeviceLifecycle, Fuses, SecurityState, U4};
 pub use caliptra_emu_bus::BusMmio;
 use output::ExitStatus;
 pub use output::Output;
-
-pub use model_emulated::ModelEmulated;
 
 #[cfg(feature = "verilator")]
 pub use model_verilated::ModelVerilated;
