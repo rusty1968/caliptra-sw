@@ -38,6 +38,7 @@ mod rv32_builder;
 
 //pub mod helpers;
 
+pub use api::{mbox_read_fifo, mbox_write_fifo};
 pub use api::{MailboxRecvTxn, MboxBuffer, SocManager};
 pub use api_types::{DeviceLifecycle, Fuses, SecurityState, U4};
 pub use caliptra_emu_bus::BusMmio;
@@ -488,12 +489,12 @@ pub trait HwModel: SocManager {
         writeln!(self.output().logger(), "writing to cptra_bootfsm_go")?;
         self.soc_ifc().cptra_bootfsm_go().write(|w| w.go(true));
 
-        self.wait_for_one_cycle();
+        self.step();
 
         if let Some(fw_image) = boot_params.fw_image {
             let mut cycles = 0;
             while !self.ready_for_fw() {
-                self.wait_for_one_cycle();
+                self.step();
                 cycles += 1;
                 if cycles > Self::MAX_WAIT_CYCLES {
                     return Err(ModelError::ReadyForFirmwareTimeout { cycles }.into());
@@ -527,7 +528,7 @@ pub trait HwModel: SocManager {
     /// Execute until the result of `predicate` becomes true.
     fn step_until(&mut self, mut predicate: impl FnMut(&mut Self) -> bool) {
         while !predicate(self) {
-            self.wait_for_one_cycle();
+            self.step();
         }
     }
 
@@ -570,7 +571,7 @@ pub trait HwModel: SocManager {
                 }
                 None => {}
             }
-            self.wait_for_one_cycle();
+            self.step();
         }
     }
 
@@ -586,7 +587,7 @@ pub trait HwModel: SocManager {
                 }
                 None => {}
             }
-            self.wait_for_one_cycle();
+            self.step();
         }
     }
 
@@ -648,7 +649,7 @@ pub trait HwModel: SocManager {
                     {initial_boot_status_u32} to {actual_status_u32})"
                 );
             }
-            self.wait_for_one_cycle();
+            self.step();
             cycle_count += 1;
             if cycle_count >= MAX_WAIT_CYCLES {
                 panic!(
@@ -675,7 +676,7 @@ pub trait HwModel: SocManager {
                     {initial_error} to {actual_error})"
                 );
             }
-            self.wait_for_one_cycle();
+            self.step();
             cycle_count += 1;
             if cycle_count >= max_wait_cycles {
                 panic!(
@@ -717,6 +718,17 @@ pub trait HwModel: SocManager {
         resp_data: &'r mut MboxBuffer,
     ) -> std::result::Result<Option<&'r MboxBuffer>, ModelError> {
         SocManager::mailbox_exec(self, cmd, buf, resp_data).map_err(ModelError::from)
+    }
+
+    fn mailbox_execute_alloc(
+        &mut self,
+        cmd: u32,
+        buf: &[u8],
+    ) -> std::result::Result<Option<Vec<u8>>, ModelError> {
+        let mut resp_data = MboxBuffer::default();
+
+        SocManager::mailbox_exec(self, cmd, buf, &mut resp_data).map_err(ModelError::from)?;
+        Ok(Some(resp_data.as_slice().to_vec()))
     }
 
     /// Send a command to the mailbox but don't wait for the response

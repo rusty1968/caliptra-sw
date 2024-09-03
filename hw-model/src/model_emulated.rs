@@ -121,7 +121,7 @@ impl SocManager for ModelEmulated {
         EmulatedApbBus { model: self }
     }
 
-    fn wait_for_one_cycle(&mut self) {
+    fn step(&mut self) {
         if self.cpu_enabled.get() {
             self.cpu.step(self.trace_fn.as_deref_mut());
         }
@@ -278,6 +278,6 @@ impl crate::HwModel for ModelEmulated {
 
     fn warm_reset(&mut self) {
         self.cpu.warm_reset();
-        self.wait_for_one_cycle();
+        self.step();
     }
 }

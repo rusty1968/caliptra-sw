@@ -79,7 +79,7 @@ fn test_read_rom_info_from_fmc() {
 
     // 0x1000_0008 is test-fmc/read_rom_info()
     let rom_info_from_fw = RomInfo::read_from(
-        hw.mailbox_execute(0x1000_0008, &[])
+        hw.mailbox_execute_alloc(0x1000_0008, &[])
             .unwrap()
             .unwrap()
             .as_slice(),

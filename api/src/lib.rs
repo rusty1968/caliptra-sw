@@ -67,7 +67,7 @@ impl<'m, 'r, TSocManager: SocManager> MailboxRecvTxn<'m, 'r, TSocManager> {
             .write(|w| w.status(|_| status));
         // mbox_fsm_ps isn't updated immediately after execute is cleared (!?),
         // so step an extra clock cycle to wait for fm_ps to update
-        self.soc_mgr.wait_for_one_cycle();
+        self.soc_mgr.step();
     }
 }
 
@@ -89,7 +89,7 @@ pub trait SocManager {
     /// microcontroller executing a few instructions
     fn apb_bus(&mut self) -> Self::TBus<'_>;
 
-    fn wait_for_one_cycle(&mut self);
+    fn step(&mut self);
 
     /// Initializes the fuse values and locks them in until the next reset. This
     /// function can only be called during early boot, shortly after the model
@@ -207,7 +207,7 @@ pub trait SocManager {
         // Wait for the microcontroller to finish executing
         let mut timeout_cycles = 40000000; // 100ms @400MHz
         while self.soc_mbox().status().read().status().cmd_busy() {
-            self.wait_for_one_cycle();
+            self.step();
             timeout_cycles -= 1;
             if timeout_cycles == 0 {
                 return Err(CaliptraApiError::MailboxTimeout);
@@ -374,7 +374,7 @@ pub trait SocManager {
             .mbox_fsm_ps()
             .mbox_execute_soc()
         {
-            self.wait_for_one_cycle();
+            self.step();
             return Err(CaliptraApiError::NoRequestsAvail);
         }
         let cmd = self.soc_mbox().cmd().read();

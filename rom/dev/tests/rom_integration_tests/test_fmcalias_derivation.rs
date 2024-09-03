@@ -72,7 +72,7 @@ fn test_firmware_gt_max_size() {
     }
     hw.soc_mbox().execute().write(|w| w.execute(true));
     while hw.soc_mbox().status().read().status().cmd_busy() {
-        hw.wait_for_one_cycle();
+        hw.step();
     }
     hw.soc_mbox().execute().write(|w| w.execute(false));
 
@@ -1128,7 +1128,7 @@ fn test_upload_measurement_limit_plus_one() {
 
     // Wait for error
     while hw.soc_ifc().cptra_fw_error_fatal().read() == 0 {
-        hw.wait_for_one_cycle();
+        hw.step();
     }
 
     assert_eq!(

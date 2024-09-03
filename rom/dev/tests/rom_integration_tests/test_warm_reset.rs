@@ -62,7 +62,7 @@ fn test_warm_reset_success() {
 
     // Wait for boot
     while !hw.soc_ifc().cptra_flow_status().read().ready_for_runtime() {
-        hw.wait_for_one_cycle();
+        hw.step();
     }
 
     // Perform warm reset
@@ -75,7 +75,7 @@ fn test_warm_reset_success() {
 
     // Wait for boot
     while !hw.soc_ifc().cptra_flow_status().read().ready_for_runtime() {
-        hw.wait_for_one_cycle();
+        hw.step();
     }
 }
 
@@ -97,7 +97,7 @@ fn test_warm_reset_during_cold_boot_before_image_validation() {
 
     // Wait for error
     while hw.soc_ifc().cptra_fw_error_fatal().read() == 0 {
-        hw.wait_for_one_cycle();
+        hw.step();
     }
     assert_eq!(
         hw.soc_ifc().cptra_fw_error_fatal().read(),
@@ -125,7 +125,7 @@ fn test_warm_reset_during_cold_boot_during_image_validation() {
 
     // Step for few times to land in image validation
     for _ in 0..1000 {
-        hw.wait_for_one_cycle();
+        hw.step();
     }
 
     // Perform a warm reset
@@ -133,7 +133,7 @@ fn test_warm_reset_during_cold_boot_during_image_validation() {
 
     // Wait for error
     while hw.soc_ifc().cptra_fw_error_fatal().read() == 0 {
-        hw.wait_for_one_cycle();
+        hw.step();
     }
     assert_eq!(
         hw.soc_ifc().cptra_fw_error_fatal().read(),
@@ -162,7 +162,7 @@ fn test_warm_reset_during_cold_boot_after_image_validation() {
 
     // Wait for error
     while hw.soc_ifc().cptra_fw_error_fatal().read() == 0 {
-        hw.wait_for_one_cycle();
+        hw.step();
     }
     assert_eq!(
         hw.soc_ifc().cptra_fw_error_fatal().read(),
@@ -209,7 +209,7 @@ fn test_warm_reset_during_update_reset() {
 
     // Wait for error
     while hw.soc_ifc().cptra_fw_error_fatal().read() == 0 {
-        hw.wait_for_one_cycle();
+        hw.step();
     }
     assert_eq!(
         hw.soc_ifc().cptra_fw_error_fatal().read(),

@@ -128,7 +128,7 @@ pub unsafe extern "C" fn caliptra_model_ready_for_fw(model: *mut caliptra_model)
 pub unsafe extern "C" fn caliptra_model_step(model: *mut caliptra_model) -> c_int {
     // Parameter check
     assert!(!model.is_null());
-    (*{ model as *mut DefaultHwModel }).wait_for_one_cycle();
+    (*{ model as *mut DefaultHwModel }).step();
 
     CALIPTRA_MODEL_STATUS_OK
 }

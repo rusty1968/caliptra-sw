@@ -699,7 +699,7 @@ fn test_mailbox_soc_to_uc() {
     }
     // Ensure there isn't any unexpected output
     for _i in 0..100000 {
-        model.wait_for_one_cycle();
+        model.step();
     }
     assert_eq!(model.output().take(usize::MAX), "");
 }
