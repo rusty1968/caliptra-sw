@@ -6,7 +6,9 @@ use caliptra_builder::{
     ImageOptions,
 };
 use caliptra_common::mailbox_api::CommandId;
-use caliptra_hw_model::{mbox_write_fifo, BootParams, HwModel, InitParams, SecurityState};
+use caliptra_hw_model::{
+    mbox_write_fifo, BootParams, HwModel, InitParams, SecurityState, SocManager,
+};
 use caliptra_test::swap_word_bytes_inplace;
 use openssl::sha::sha384;
 use zerocopy::AsBytes;
@@ -68,7 +70,8 @@ fn warm_reset_basic() {
         owner_pk_hash,
         fmc_key_manifest_svn: 0b1111111,
         ..Default::default()
-    });
+    })
+    .unwrap();
 
     // Wait for boot
     while !hw.soc_ifc().cptra_flow_status().read().ready_for_runtime() {
@@ -133,12 +136,14 @@ fn warm_reset_during_fw_load() {
     hw.soc_mbox().execute().write(|w| w.execute(true));
 
     // Perform warm reset while ROM is executing the firmware load
-    hw.warm_reset_flow(&Fuses {
-        key_manifest_pk_hash: vendor_pk_hash,
-        owner_pk_hash,
-        fmc_key_manifest_svn: 0b1111111,
-        ..Default::default()
-    });
+    assert!(hw
+        .warm_reset_flow(&Fuses {
+            key_manifest_pk_hash: vendor_pk_hash,
+            owner_pk_hash,
+            fmc_key_manifest_svn: 0b1111111,
+            ..Default::default()
+        })
+        .is_ok());
 
     // Wait for error
     while hw.soc_ifc().cptra_fw_error_fatal().read() == 0 {

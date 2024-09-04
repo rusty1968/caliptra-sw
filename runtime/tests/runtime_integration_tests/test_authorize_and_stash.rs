@@ -5,7 +5,8 @@ use caliptra_common::mailbox_api::{
     AuthorizeAndStashReq, AuthorizeAndStashResp, CommandId, ImageHashSource, MailboxReq,
     MailboxReqHeader,
 };
-use caliptra_hw_model::HwModel;
+use caliptra_hw_model::MboxBuffer;
+use caliptra_hw_model::{HwModel, SocManager};
 use caliptra_runtime::RtBootStatus;
 use caliptra_runtime::DENY_IMAGE_AUTHORIZATION;
 use zerocopy::FromBytes;
@@ -33,10 +34,12 @@ fn test_authorize_and_stash_cmd_deny_authorization() {
     });
     authorize_and_stash_cmd.populate_chksum().unwrap();
 
+    let mut resp_buffer = MboxBuffer::default();
     let resp = model
         .mailbox_execute(
             u32::from(CommandId::AUTHORIZE_AND_STASH),
             authorize_and_stash_cmd.as_bytes().unwrap(),
+            &mut resp_buffer,
         )
         .unwrap()
         .expect("We should have received a response");

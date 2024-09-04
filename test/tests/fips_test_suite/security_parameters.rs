@@ -154,6 +154,8 @@ pub fn attempt_ssp_access_rom() {
 #[test]
 #[cfg(not(feature = "test_env_immutable_rom"))]
 pub fn attempt_ssp_access_fw_load() {
+    //use dpe::response;
+
     let rom = caliptra_builder::build_firmware_rom(&ROM_WITH_FIPS_TEST_HOOKS).unwrap();
 
     let fw_image = fips_fw_image();
@@ -202,7 +204,8 @@ pub fn attempt_ssp_access_fw_load() {
     hook_wait_for_complete(&mut hw);
 
     // Wait for the FW load to report success
-    hw.finish_mailbox_execute().unwrap();
+    let mut _resp_buffer = MboxBuffer::default();
+    hw.finish_mailbox_execute(&mut _resp_buffer).unwrap();
 }
 
 #[test]

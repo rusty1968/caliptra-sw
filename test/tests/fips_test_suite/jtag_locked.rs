@@ -2,8 +2,7 @@
 
 use crate::common::fips_test_init_to_rom;
 use caliptra_hw_model::OpenOcdError;
-use caliptra_hw_model::{InitParams, SecurityState};
-use caliptra_hw_model_types::DeviceLifecycle;
+use caliptra_hw_model::{DeviceLifecycle, InitParams, SecurityState};
 
 fn check_jtag_accessible(
     rom: &[u8],

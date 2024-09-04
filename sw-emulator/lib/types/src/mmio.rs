@@ -1,10 +1,10 @@
 // Licensed under the Apache-2.0 license
 
-use std::cell::RefCell;
+use core::cell::RefCell;
 
-use caliptra_emu_types::RvSize;
+use crate::RvSize;
 
-use crate::Bus;
+use crate::bus::Bus;
 
 const fn rvsize<T>() -> RvSize {
     match core::mem::size_of::<T>() {
@@ -16,10 +16,10 @@ const fn rvsize<T>() -> RvSize {
 }
 
 unsafe fn transmute_to_u32<T>(src: &T) -> u32 {
-    match std::mem::size_of::<T>() {
-        1 => std::mem::transmute_copy::<T, u8>(src).into(),
-        2 => std::mem::transmute_copy::<T, u16>(src).into(),
-        4 => std::mem::transmute_copy::<T, u32>(src),
+    match core::mem::size_of::<T>() {
+        1 => core::mem::transmute_copy::<T, u8>(src).into(),
+        2 => core::mem::transmute_copy::<T, u16>(src).into(),
+        4 => core::mem::transmute_copy::<T, u32>(src),
         _ => panic!("Unsupported write size"),
     }
 }
@@ -55,10 +55,10 @@ impl<TBus: Bus> ureg::Mmio for BusMmio<TBus> {
             .borrow_mut()
             .read(rvsize::<T>(), src as usize as u32)
             .unwrap();
-        match std::mem::size_of::<T>() {
-            1 => std::mem::transmute_copy::<u8, T>(&(val_u32 as u8)),
-            2 => std::mem::transmute_copy::<u16, T>(&(val_u32 as u16)),
-            4 => std::mem::transmute_copy::<u32, T>(&val_u32),
+        match core::mem::size_of::<T>() {
+            1 => core::mem::transmute_copy::<u8, T>(&(val_u32 as u8)),
+            2 => core::mem::transmute_copy::<u16, T>(&(val_u32 as u16)),
+            4 => core::mem::transmute_copy::<u32, T>(&val_u32),
             _ => panic!("Unsupported read size"),
         }
     }
@@ -80,31 +80,5 @@ impl<TBus: Bus> ureg::MmioMut for BusMmio<TBus> {
             .borrow_mut()
             .write(rvsize::<T>(), dst as usize as u32, transmute_to_u32(&src))
             .unwrap()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::Ram;
-    use ureg::{Mmio, MmioMut};
-
-    use super::*;
-
-    #[test]
-    fn test_bus_mmio() {
-        let mmio = BusMmio::new(Ram::new(vec![0u8; 12]));
-        unsafe {
-            mmio.write_volatile(4 as *mut u32, 0x3abc_9321);
-            mmio.write_volatile(8 as *mut u16, 0x39af);
-            mmio.write_volatile(10 as *mut u8, 0xf3);
-
-            assert_eq!(mmio.read_volatile(4 as *const u32), 0x3abc_9321);
-            assert_eq!(mmio.read_volatile(8 as *const u16), 0x39af);
-            assert_eq!(mmio.read_volatile(10 as *const u8), 0xf3);
-        }
-        assert_eq!(
-            mmio.into_inner().data(),
-            &[0x00, 0x00, 0x00, 0x00, 0x21, 0x93, 0xbc, 0x3a, 0xaf, 0x39, 0xf3, 0x00]
-        );
     }
 }

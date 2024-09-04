@@ -212,9 +212,13 @@ checksum = "14c189c53d098945499cdfa7ecc63567cf3886b3332b312a5b4585d8d3a6a610"
 name = "caliptra-api"
 version = "0.1.0"
 dependencies = [
+ "arrayvec",
  "bitflags 2.4.0",
+ "caliptra-api-types",
  "caliptra-emu-types",
  "caliptra-error",
+ "caliptra-registers",
+ "ureg",
  "zerocopy",
 ]
 
@@ -486,6 +490,9 @@ dependencies = [
 [[package]]
 name = "caliptra-emu-types"
 version = "0.1.0"
+dependencies = [
+ "ureg",
+]
 
 [[package]]
 name = "caliptra-error"

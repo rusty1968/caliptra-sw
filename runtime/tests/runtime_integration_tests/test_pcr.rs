@@ -7,7 +7,7 @@ use caliptra_common::mailbox_api::{
 };
 use caliptra_drivers::PcrId;
 use caliptra_error::CaliptraError;
-use caliptra_hw_model::{DefaultHwModel, HwModel, ModelError};
+use caliptra_hw_model::{DefaultHwModel, HwModel, ModelError, SocManager};
 use openssl::{
     bn::BigNum,
     ecdsa::EcdsaSig,
@@ -31,7 +31,7 @@ fn test_pcr_quote() {
     cmd.populate_chksum().unwrap();
 
     let _ = model
-        .mailbox_execute(
+        .mailbox_execute_heap(
             u32::from(CommandId::INCREMENT_PCR_RESET_COUNTER),
             cmd.as_bytes().unwrap(),
         )
@@ -45,7 +45,7 @@ fn test_pcr_quote() {
     cmd.populate_chksum().unwrap();
 
     let resp = model
-        .mailbox_execute(u32::from(CommandId::QUOTE_PCRS), cmd.as_bytes().unwrap())
+        .mailbox_execute_heap(u32::from(CommandId::QUOTE_PCRS), cmd.as_bytes().unwrap())
         .unwrap()
         .unwrap();
 
@@ -94,7 +94,7 @@ pub fn get_model_pcrs(model: &mut DefaultHwModel) -> [[u8; 48]; 32] {
     cmd.populate_chksum().unwrap();
 
     let resp = model
-        .mailbox_execute(u32::from(CommandId::QUOTE_PCRS), cmd.as_bytes().unwrap())
+        .mailbox_execute_heap(u32::from(CommandId::QUOTE_PCRS), cmd.as_bytes().unwrap())
         .unwrap()
         .unwrap();
 
@@ -119,7 +119,7 @@ fn test_extend_pcr_cmd_multiple_extensions() {
     let extension_data = [0u8; 48];
 
     let cmd = generate_mailbox_extend_pcr_req(4, extension_data);
-    let res = model.mailbox_execute(u32::from(CommandId::EXTEND_PCR), cmd.as_bytes().unwrap());
+    let res = model.mailbox_execute_heap(u32::from(CommandId::EXTEND_PCR), cmd.as_bytes().unwrap());
     assert!(res.is_ok());
 
     // 1.1 Checking for PCR values using PCR_QUOTE
@@ -129,7 +129,7 @@ fn test_extend_pcr_cmd_multiple_extensions() {
 
     // 1.2 Extending PCR[4] with another [0,..,0] payload
     let cmd = generate_mailbox_extend_pcr_req(4, extension_data);
-    let res = model.mailbox_execute(u32::from(CommandId::EXTEND_PCR), cmd.as_bytes().unwrap());
+    let res = model.mailbox_execute_heap(u32::from(CommandId::EXTEND_PCR), cmd.as_bytes().unwrap());
 
     assert!(res.is_ok());
 
@@ -146,7 +146,7 @@ fn test_extend_pcr_cmd_multiple_extensions() {
     ];
 
     let cmd = generate_mailbox_extend_pcr_req(4, extension_data);
-    let res = model.mailbox_execute(u32::from(CommandId::EXTEND_PCR), cmd.as_bytes().unwrap());
+    let res = model.mailbox_execute_heap(u32::from(CommandId::EXTEND_PCR), cmd.as_bytes().unwrap());
     assert!(res.is_ok());
 
     // 2.1 Checking for PCR values using PCR_QUOTE
@@ -162,7 +162,7 @@ fn test_extend_pcr_cmd_invalid_pcr_index() {
 
     // 3. Invalid PCR index
     let cmd = generate_mailbox_extend_pcr_req(33, extension_data);
-    let res = model.mailbox_execute(u32::from(CommandId::EXTEND_PCR), cmd.as_bytes().unwrap());
+    let res = model.mailbox_execute_heap(u32::from(CommandId::EXTEND_PCR), cmd.as_bytes().unwrap());
     assert_eq!(
         res,
         Err(ModelError::MailboxCmdFailed(u32::from(
@@ -181,7 +181,8 @@ fn test_extend_pcr_cmd_reserved_range() {
     for test_pcr_index_reserved in reserved_pcrs {
         let cmd = generate_mailbox_extend_pcr_req(test_pcr_index_reserved.into(), extension_data);
 
-        let res = model.mailbox_execute(u32::from(CommandId::EXTEND_PCR), cmd.as_bytes().unwrap());
+        let res =
+            model.mailbox_execute_heap(u32::from(CommandId::EXTEND_PCR), cmd.as_bytes().unwrap());
         assert_eq!(
             res,
             Err(ModelError::MailboxCmdFailed(u32::from(

@@ -4,7 +4,9 @@ use crate::common::{assert_error, run_rt_test};
 use caliptra_common::mailbox_api::{
     CommandId, EcdsaVerifyReq, MailboxReq, MailboxReqHeader, MailboxRespHeader,
 };
-use caliptra_hw_model::{HwModel, ShaAccMode};
+use caliptra_hw_model::{HwModel, ShaAccMode, SocManager};
+
+use caliptra_hw_model::MboxBuffer;
 use caliptra_runtime::RtBootStatus;
 use zerocopy::{AsBytes, FromBytes, LayoutVerified};
 
@@ -102,9 +104,12 @@ fn ecdsa_cmd_run_wycheproof() {
                 // Do tests on mailbox
             });
             cmd.populate_chksum().unwrap();
+
+            let mut resp_bytes = MboxBuffer::default();
             let resp = model.mailbox_execute(
                 u32::from(CommandId::ECDSA384_VERIFY),
                 cmd.as_bytes().unwrap(),
+                &mut resp_bytes,
             );
             match test.result {
                 wycheproof::TestResult::Valid | wycheproof::TestResult::Acceptable => match resp {
@@ -202,10 +207,12 @@ fn test_ecdsa_verify_cmd() {
     });
     cmd.populate_chksum().unwrap();
 
+    let mut resp_bytes = MboxBuffer::default();
     let resp = model
         .mailbox_execute(
             u32::from(CommandId::ECDSA384_VERIFY),
             cmd.as_bytes().unwrap(),
+            &mut resp_bytes,
         )
         .unwrap()
         .expect("We should have received a response");
@@ -236,10 +243,12 @@ fn test_ecdsa_verify_bad_chksum() {
         signature_s: [0u8; 48],
     });
 
+    let mut resp_bytes = MboxBuffer::default();
     let resp = model
         .mailbox_execute(
             u32::from(CommandId::ECDSA384_VERIFY),
             cmd.as_bytes().unwrap(),
+            &mut resp_bytes,
         )
         .unwrap_err();
     assert_error(
@@ -264,10 +273,12 @@ fn test_ecdsa_hw_failure() {
     });
     cmd.populate_chksum().unwrap();
 
+    let mut response = MboxBuffer::default();
     let resp = model
         .mailbox_execute(
             u32::from(CommandId::ECDSA384_VERIFY),
             cmd.as_bytes().unwrap(),
+            &mut response,
         )
         .unwrap_err();
 

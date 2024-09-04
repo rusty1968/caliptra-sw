@@ -9,7 +9,8 @@ use caliptra_common::memory_layout::{ICCM_ORG, ICCM_SIZE};
 use caliptra_drivers::CaliptraError;
 use caliptra_drivers::FipsTestHook;
 use caliptra_hw_model::{
-    BootParams, DeviceLifecycle, Fuses, HwModel, InitParams, ModelError, SecurityState, U4,
+    BootParams, DeviceLifecycle, Fuses, HwModel, InitParams, ModelError, SecurityState, SocManager,
+    U4,
 };
 use caliptra_image_crypto::OsslCrypto as Crypto;
 use caliptra_image_fake_keys::{VENDOR_CONFIG_KEY_0, VENDOR_CONFIG_KEY_1};

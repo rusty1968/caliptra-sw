@@ -10,7 +10,7 @@ use caliptra_drivers::{
     pcr_log::{PcrLogEntry, PcrLogEntryId},
     FirmwareHandoffTable, PcrId,
 };
-use caliptra_hw_model::{BootParams, HwModel, InitParams};
+use caliptra_hw_model::{BootParams, HwModel, InitParams, MboxBuffer};
 
 use caliptra_test::swap_word_bytes;
 use zerocopy::{AsBytes, FromBytes};
@@ -88,7 +88,11 @@ fn test_fht_info() {
     )
     .unwrap();
 
-    let data = hw.mailbox_execute(TEST_CMD_READ_FHT, &[]).unwrap().unwrap();
+    let mut resp_buffer = MboxBuffer::default();
+    let data = hw
+        .mailbox_execute(TEST_CMD_READ_FHT, &[], &mut resp_buffer)
+        .unwrap()
+        .unwrap();
     let fht = FirmwareHandoffTable::read_from_prefix(data.as_bytes()).unwrap();
     assert_eq!(fht.ldevid_tbs_size, 552);
     assert_eq!(fht.fmcalias_tbs_size, 786);
@@ -124,11 +128,16 @@ fn test_pcr_log() {
     )
     .unwrap();
 
-    let data = hw.mailbox_execute(TEST_CMD_READ_FHT, &[]).unwrap().unwrap();
+    let mut resp_buffer = MboxBuffer::default();
+    let data = hw
+        .mailbox_execute(TEST_CMD_READ_FHT, &[], &mut resp_buffer)
+        .unwrap()
+        .unwrap();
     let fht = FirmwareHandoffTable::read_from_prefix(data.as_bytes()).unwrap();
 
+    let mut resp_buffer = MboxBuffer::default();
     let pcr_entry_arr = hw
-        .mailbox_execute(TEST_CMD_READ_PCR_LOG, &[])
+        .mailbox_execute(TEST_CMD_READ_PCR_LOG, &[], &mut resp_buffer)
         .unwrap()
         .unwrap();
 
@@ -141,7 +150,7 @@ fn test_pcr_log() {
     let manifest_digest1 = openssl::sha::sha384(image1.manifest.as_bytes());
 
     check_pcr_log_entry(
-        &pcr_entry_arr,
+        pcr_entry_arr,
         fht.pcr_log_index - 2,
         PcrLogEntryId::RtTci,
         PCR2_AND_PCR3_EXTENDED_ID,
@@ -149,7 +158,7 @@ fn test_pcr_log() {
     );
 
     check_pcr_log_entry(
-        &pcr_entry_arr,
+        pcr_entry_arr,
         fht.pcr_log_index - 1,
         PcrLogEntryId::FwImageManifest,
         PCR2_AND_PCR3_EXTENDED_ID,
@@ -157,7 +166,11 @@ fn test_pcr_log() {
     );
 
     // Fetch and validate PCR values against the log.
-    let pcrs = hw.mailbox_execute(0x1000_0002, &[]).unwrap().unwrap();
+    let mut resp_buffer = MboxBuffer::default();
+    let pcrs = hw
+        .mailbox_execute(0x1000_0002, &[], &mut resp_buffer)
+        .unwrap()
+        .unwrap();
     assert_eq!(pcrs.len(), PCR_COUNT * 48);
     let mut pcr2_from_hw: [u8; 48] = pcrs[(2 * 48)..(3 * 48)].try_into().unwrap();
     let mut pcr3_from_hw: [u8; 48] = pcrs[(3 * 48)..(4 * 48)].try_into().unwrap();
@@ -165,8 +178,8 @@ fn test_pcr_log() {
     change_dword_endianess(&mut pcr2_from_hw);
     change_dword_endianess(&mut pcr3_from_hw);
 
-    let pcr2_from_log = hash_pcr_log_entries(&[0; 48], &pcr_entry_arr, PcrId::PcrId2);
-    let pcr3_from_log = hash_pcr_log_entries(&[0; 48], &pcr_entry_arr, PcrId::PcrId3);
+    let pcr2_from_log = hash_pcr_log_entries(&[0; 48], pcr_entry_arr, PcrId::PcrId2);
+    let pcr3_from_log = hash_pcr_log_entries(&[0; 48], pcr_entry_arr, PcrId::PcrId3);
 
     assert_eq!(pcr2_from_log, pcr2_from_hw);
     assert_eq!(pcr3_from_log, pcr3_from_hw);
@@ -189,12 +202,14 @@ fn test_pcr_log() {
     hw.step_until_boot_status(KatComplete.into(), true);
     hw.step_until_boot_status(UpdateResetStarted.into(), false);
 
-    assert_eq!(hw.finish_mailbox_execute(), Ok(None));
+    let mut resp_buffer = MboxBuffer::default();
+    assert_eq!(hw.finish_mailbox_execute(&mut resp_buffer), Ok(None));
 
     hw.step_until_boot_status(RT_ALIAS_DERIVATION_COMPLETE, true);
 
+    let mut resp_buffer = MboxBuffer::default();
     let pcr_entry_arr = hw
-        .mailbox_execute(TEST_CMD_READ_PCR_LOG, &[])
+        .mailbox_execute(TEST_CMD_READ_PCR_LOG, &[], &mut resp_buffer)
         .unwrap()
         .unwrap();
 
@@ -207,7 +222,7 @@ fn test_pcr_log() {
     let manifest_digest2 = openssl::sha::sha384(image2.manifest.as_bytes());
 
     check_pcr_log_entry(
-        &pcr_entry_arr,
+        pcr_entry_arr,
         fht.pcr_log_index - 2,
         PcrLogEntryId::RtTci,
         PCR2_AND_PCR3_EXTENDED_ID,
@@ -215,18 +230,22 @@ fn test_pcr_log() {
     );
 
     check_pcr_log_entry(
-        &pcr_entry_arr,
+        pcr_entry_arr,
         fht.pcr_log_index - 1,
         PcrLogEntryId::FwImageManifest,
         PCR2_AND_PCR3_EXTENDED_ID,
         &manifest_digest2,
     );
 
-    let pcr2_from_log = hash_pcr_log_entries(&[0; 48], &pcr_entry_arr, PcrId::PcrId2);
-    let pcr3_from_log = hash_pcr_log_entries(&pcr3_from_log, &pcr_entry_arr, PcrId::PcrId3);
+    let pcr2_from_log = hash_pcr_log_entries(&[0; 48], pcr_entry_arr, PcrId::PcrId2);
+    let pcr3_from_log = hash_pcr_log_entries(&pcr3_from_log, pcr_entry_arr, PcrId::PcrId3);
 
     // Fetch and validate PCR values against the log.
-    let pcrs = hw.mailbox_execute(0x1000_0002, &[]).unwrap().unwrap();
+    let mut resp_buffer = MboxBuffer::default();
+    let pcrs = hw
+        .mailbox_execute(0x1000_0002, &[], &mut resp_buffer)
+        .unwrap()
+        .unwrap();
     assert_eq!(pcrs.len(), PCR_COUNT * 48);
     let mut pcr2_from_hw: [u8; 48] = pcrs[(2 * 48)..(3 * 48)].try_into().unwrap();
     let mut pcr3_from_hw: [u8; 48] = pcrs[(3 * 48)..(4 * 48)].try_into().unwrap();
@@ -238,7 +257,8 @@ fn test_pcr_log() {
     assert_eq!(pcr3_from_log, pcr3_from_hw);
 
     // Also ensure PCR locks are configured correctly.
-    let result = hw.mailbox_execute(TEST_CMD_PCRS_LOCKED, &[]);
+    let mut buffer = MboxBuffer::default();
+    let result = hw.mailbox_execute(TEST_CMD_PCRS_LOCKED, &[], &mut buffer);
     assert!(result.is_ok());
 }
 

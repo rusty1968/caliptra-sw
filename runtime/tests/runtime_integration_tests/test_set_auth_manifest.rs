@@ -10,7 +10,7 @@ use caliptra_auth_man_types::{
 };
 use caliptra_common::mailbox_api::{CommandId, MailboxReq, MailboxReqHeader, SetAuthManifestReq};
 use caliptra_error::CaliptraError;
-use caliptra_hw_model::HwModel;
+use caliptra_hw_model::{HwModel, MboxBuffer, SocManager};
 use caliptra_image_crypto::OsslCrypto as Crypto;
 use caliptra_image_fake_keys::*;
 use caliptra_runtime::RtBootStatus;
@@ -123,10 +123,12 @@ fn test_set_auth_manifest_cmd() {
     });
     set_auth_manifest_cmd.populate_chksum().unwrap();
 
+    let mut resp = MboxBuffer::default();
     model
         .mailbox_execute(
             u32::from(CommandId::SET_AUTH_MANIFEST),
             set_auth_manifest_cmd.as_bytes().unwrap(),
+            &mut resp,
         )
         .unwrap()
         .expect("We should have received a response");
@@ -147,10 +149,12 @@ fn test_set_auth_manifest_cmd_invalid_len() {
     });
     set_auth_manifest_cmd.populate_chksum().unwrap();
 
+    let mut resp_buffer = MboxBuffer::default();
     let resp = model
         .mailbox_execute(
             u32::from(CommandId::SET_AUTH_MANIFEST),
             set_auth_manifest_cmd.as_bytes().unwrap(),
+            &mut resp_buffer,
         )
         .unwrap_err();
 
@@ -167,10 +171,12 @@ fn test_set_auth_manifest_cmd_invalid_len() {
     });
     set_auth_manifest_cmd.populate_chksum().unwrap();
 
+    let mut resp_buffer = MboxBuffer::default();
     let resp = model
         .mailbox_execute(
             u32::from(CommandId::SET_AUTH_MANIFEST),
             set_auth_manifest_cmd.as_bytes().unwrap(),
+            &mut resp_buffer,
         )
         .unwrap_err();
 
@@ -199,10 +205,12 @@ fn test_manifest_expect_err(manifest: AuthorizationManifest, expected_err: Calip
     });
     set_auth_manifest_cmd.populate_chksum().unwrap();
 
+    let mut resp_buffer = MboxBuffer::default();
     let resp = model
         .mailbox_execute(
             u32::from(CommandId::SET_AUTH_MANIFEST),
             set_auth_manifest_cmd.as_bytes().unwrap(),
+            &mut resp_buffer,
         )
         .unwrap_err();
 

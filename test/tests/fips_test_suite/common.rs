@@ -4,7 +4,9 @@ use caliptra_builder::firmware::{APP_WITH_UART, FMC_WITH_UART};
 use caliptra_builder::{version, ImageOptions};
 use caliptra_common::mailbox_api::*;
 use caliptra_drivers::FipsTestHook;
-use caliptra_hw_model::{BootParams, DefaultHwModel, HwModel, InitParams, ModelError, ShaAccMode};
+use caliptra_hw_model::{
+    BootParams, DefaultHwModel, HwModel, InitParams, ModelError, ShaAccMode, SocManager,
+};
 use caliptra_test::swap_word_bytes_inplace;
 use dpe::{
     commands::*,
@@ -240,7 +242,7 @@ pub fn mbx_send_and_check_resp_hdr<T: HwModel, U: FromBytes + AsBytes>(
     cmd: u32,
     req_payload: &[u8],
 ) -> std::result::Result<U, ModelError> {
-    let resp_bytes = hw.mailbox_execute(cmd, req_payload)?.unwrap();
+    let resp_bytes = hw.mailbox_execute_heap(cmd, req_payload)?.unwrap();
 
     // Check values against expected.
     let resp_hdr =
@@ -398,7 +400,7 @@ pub fn verify_mbox_output_inhibited<T: HwModel>(hw: &mut T) {
     let payload = MailboxReqHeader {
         chksum: caliptra_common::checksum::calc_checksum(u32::from(CommandId::VERSION), &[]),
     };
-    match hw.mailbox_execute(u32::from(CommandId::VERSION), payload.as_bytes()) {
+    match hw.mailbox_execute_heap(u32::from(CommandId::VERSION), payload.as_bytes()) {
         Ok(_) => panic!("Mailbox output is not inhibited"),
         Err(ModelError::MailboxTimeout) => (),
         Err(ModelError::UnableToLockMailbox) => (),

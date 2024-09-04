@@ -5,7 +5,9 @@ use caliptra_builder::{
     ImageOptions,
 };
 use caliptra_error::CaliptraError;
-use caliptra_hw_model::{BootParams, DeviceLifecycle, Fuses, HwModel, InitParams, SecurityState};
+use caliptra_hw_model::{
+    BootParams, DeviceLifecycle, Fuses, HwModel, InitParams, MboxBuffer, SecurityState, SocManager,
+};
 use caliptra_registers::mbox::enums::MboxStatusE;
 use dpe::DPE_PROFILE;
 use openssl::sha::sha384;
@@ -66,18 +68,25 @@ fn test_rt_journey_pcr_validation() {
     // Wait for boot
     model.step_until(|m| m.soc_ifc().cptra_flow_status().read().ready_for_runtime());
 
+    let mut resp_bytes = MboxBuffer::default();
     let _ = model
-        .mailbox_execute(0xD000_0000, &[0u8; DPE_PROFILE.get_tci_size()])
+        .mailbox_execute(
+            0xD000_0000,
+            &[0u8; DPE_PROFILE.get_tci_size()],
+            &mut resp_bytes,
+        )
         .unwrap()
         .unwrap();
 
     // Perform warm reset
-    model.warm_reset_flow(&Fuses {
-        key_manifest_pk_hash: vendor_pk_hash,
-        owner_pk_hash,
-        fmc_key_manifest_svn: 0b1111111,
-        ..Default::default()
-    });
+    assert!(model
+        .warm_reset_flow(&Fuses {
+            key_manifest_pk_hash: vendor_pk_hash,
+            owner_pk_hash,
+            fmc_key_manifest_svn: 0b1111111,
+            ..Default::default()
+        })
+        .is_ok());
 
     model.step_until(|m| {
         m.soc_ifc().cptra_fw_error_non_fatal().read()
@@ -137,12 +146,14 @@ fn test_mbox_busy_during_warm_reset() {
         .write(|w| w.status(|_| MboxStatusE::CmdBusy));
 
     // Perform warm reset
-    model.warm_reset_flow(&Fuses {
-        key_manifest_pk_hash: vendor_pk_hash,
-        owner_pk_hash,
-        fmc_key_manifest_svn: 0b1111111,
-        ..Default::default()
-    });
+    model
+        .warm_reset_flow(&Fuses {
+            key_manifest_pk_hash: vendor_pk_hash,
+            owner_pk_hash,
+            fmc_key_manifest_svn: 0b1111111,
+            ..Default::default()
+        })
+        .unwrap();
 
     model.step_until(|m| {
         m.soc_ifc().cptra_fw_error_non_fatal().read()

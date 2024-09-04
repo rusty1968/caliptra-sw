@@ -6,8 +6,8 @@ use caliptra_builder::ImageOptions;
 use caliptra_common::mailbox_api::CommandId;
 use caliptra_common::RomBootStatus::*;
 use caliptra_drivers::CaliptraError;
-use caliptra_hw_model::DeviceLifecycle;
-use caliptra_hw_model::{BootParams, Fuses, HwModel, InitParams, SecurityState};
+use caliptra_hw_model::{BootParams, Fuses, HwModel, InitParams, SecurityState, SocManager};
+use caliptra_hw_model::{DeviceLifecycle, MboxBuffer};
 use caliptra_test::swap_word_bytes_inplace;
 use openssl::sha::sha384;
 use zerocopy::AsBytes;
@@ -66,12 +66,14 @@ fn test_warm_reset_success() {
     }
 
     // Perform warm reset
-    hw.warm_reset_flow(&Fuses {
-        key_manifest_pk_hash: vendor_pk_hash,
-        owner_pk_hash,
-        fmc_key_manifest_svn: 0b1111111,
-        ..Default::default()
-    });
+    assert!(hw
+        .warm_reset_flow(&Fuses {
+            key_manifest_pk_hash: vendor_pk_hash,
+            owner_pk_hash,
+            fmc_key_manifest_svn: 0b1111111,
+            ..Default::default()
+        })
+        .is_ok());
 
     // Wait for boot
     while !hw.soc_ifc().cptra_flow_status().read().ready_for_runtime() {
@@ -93,7 +95,7 @@ fn test_warm_reset_during_cold_boot_before_image_validation() {
     hw.step_until_boot_status(IDevIdDecryptUdsComplete.into(), true);
 
     // Perform a warm reset
-    hw.warm_reset_flow(&Fuses::default());
+    assert!(hw.warm_reset_flow(&Fuses::default()).is_ok());
 
     // Wait for error
     while hw.soc_ifc().cptra_fw_error_fatal().read() == 0 {
@@ -129,7 +131,7 @@ fn test_warm_reset_during_cold_boot_during_image_validation() {
     }
 
     // Perform a warm reset
-    hw.warm_reset_flow(&Fuses::default());
+    assert!(hw.warm_reset_flow(&Fuses::default()).is_ok());
 
     // Wait for error
     while hw.soc_ifc().cptra_fw_error_fatal().read() == 0 {
@@ -158,7 +160,7 @@ fn test_warm_reset_during_cold_boot_after_image_validation() {
     hw.step_until_boot_status(FmcAliasDerivationComplete.into(), true);
 
     // Perform a warm reset
-    hw.warm_reset_flow(&Fuses::default());
+    assert!(hw.warm_reset_flow(&Fuses::default()).is_ok());
 
     // Wait for error
     while hw.soc_ifc().cptra_fw_error_fatal().read() == 0 {
@@ -198,13 +200,14 @@ fn test_warm_reset_during_update_reset() {
         hw.step_until_boot_status(UpdateResetStarted.into(), false);
     }
 
-    assert_eq!(hw.finish_mailbox_execute(), Ok(None));
+    let mut buffer = MboxBuffer::default();
+    assert_eq!(hw.finish_mailbox_execute(&mut buffer), Ok(None));
 
     // Step till after last step in update reset is complete
     hw.step_until_boot_status(UpdateResetLoadImageComplete.into(), true);
 
     // Perform a warm reset
-    hw.warm_reset_flow(&Fuses::default());
+    hw.warm_reset_flow(&Fuses::default()).unwrap();
 
     // Wait for error
     while hw.soc_ifc().cptra_fw_error_fatal().read() == 0 {

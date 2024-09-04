@@ -5,7 +5,7 @@ use crate::common::{
 };
 use caliptra_common::mailbox_api::{InvokeDpeReq, MailboxReq, MailboxReqHeader};
 use caliptra_drivers::CaliptraError;
-use caliptra_hw_model::HwModel;
+use caliptra_hw_model::{HwModel, SocManager};
 use caliptra_runtime::{RtBootStatus, DPE_SUPPORT, VENDOR_ID, VENDOR_SKU};
 use cms::{
     cert::x509::der::{Decode, Encode},
