@@ -34,7 +34,6 @@ const CALIPTRA_MAPPING: usize = 1;
 
 // Set to core_clk cycles per ITRNG sample.
 const ITRNG_DIVISOR: u32 = 400;
-const DEFAULT_APB_PAUSER: u32 = 0x1;
 
 fn fmt_uio_error(err: UioError) -> String {
     format!("{err:?}")
@@ -391,7 +390,7 @@ impl HwModel for ModelFpgaRealtime {
         m.set_security_state(params.security_state);
 
         // Set initial PAUSER
-        m.set_apb_pauser(DEFAULT_APB_PAUSER);
+        m.set_apb_pauser(crate::DEFAULT_APB_PAUSER);
 
         // Set divisor for ITRNG throttling
         m.set_itrng_divider(ITRNG_DIVISOR);

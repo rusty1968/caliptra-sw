@@ -16,8 +16,6 @@ use std::rc::Rc;
 
 use crate::Output;
 
-const DEFAULT_APB_PAUSER: u32 = 0x1;
-
 // How many clock cycles before emitting a TRNG nibble
 const TRNG_DELAY: u32 = 4;
 
@@ -222,7 +220,7 @@ impl crate::HwModel for ModelVerilated {
 
             log,
 
-            soc_apb_pauser: DEFAULT_APB_PAUSER,
+            soc_apb_pauser: caliptra_hw_model::DEFAULT_APB_PAUSER,
         };
 
         m.tracing_hint(true);

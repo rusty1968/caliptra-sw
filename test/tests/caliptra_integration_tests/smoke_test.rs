@@ -7,7 +7,7 @@ use caliptra_common::mailbox_api::{
 };
 use caliptra_common::RomBootStatus;
 use caliptra_drivers::CaliptraError;
-use caliptra_hw_model::{BootParams, HwModel, InitParams, SecurityState};
+use caliptra_hw_model::{BootParams, DefaultHwModel, HwModel, InitParams, SecurityState};
 use caliptra_hw_model_types::{DeviceLifecycle, Fuses, RandomEtrngResponses, RandomNibbles};
 use caliptra_test::derive::{PcrRtCurrentInput, RtAliasKey};
 use caliptra_test::{derive, redact_cert, run_test, RedactOpts, UnwrapSingle};
@@ -23,6 +23,17 @@ use rand::SeedableRng;
 use regex::Regex;
 use std::mem;
 use zerocopy::AsBytes;
+
+use dpe::{
+    commands::{
+        CertifyKeyCmd, CertifyKeyFlags, Command, DeriveContextCmd, DeriveContextFlags, InitCtxCmd,
+        RotateCtxCmd, RotateCtxFlags,
+    },
+    context::ContextHandle,
+    response::Response,
+    DPE_PROFILE,
+};
+
 
 #[track_caller]
 fn assert_output_contains(haystack: &str, needle: &str) {
@@ -137,6 +148,63 @@ fn bytes_to_be_words_48(buf: &[u8; 48]) -> [u32; 12] {
     result
 }
 
+fn pl0_derive_context_dpe_context_thresholds(model: &mut DefaultHwModel) {
+    // First rotate the default context so that we don't run into an error
+    // when trying to retain the default context in derive child.
+    let rotate_ctx_cmd = RotateCtxCmd {
+        handle: ContextHandle::default(),
+        flags: RotateCtxFlags::empty(),
+    };
+    let resp = execute_dpe_cmd(
+        &mut model,
+        &mut Command::RotateCtx(rotate_ctx_cmd),
+        DpeResult::Success,
+    );
+    let Some(Response::RotateCtx(rotate_ctx_resp)) = resp else {
+        panic!("Wrong response type!");
+    };
+    let mut handle = rotate_ctx_resp.handle;
+
+    // Call DeriveContext with PL0 enough times to breach the threshold on the last iteration.
+    // Note that this loop runs exactly PL0_DPE_ACTIVE_CONTEXT_THRESHOLD times. When we initialize
+    // DPE, we measure mailbox valid pausers in pl0_pauser's locality. Thus, we can call derive child
+    // from PL0 exactly 7 times, and the last iteration of this loop, is expected to throw a threshold breached error.
+    let num_iterations = PL0_DPE_ACTIVE_CONTEXT_THRESHOLD;
+    for i in 0..num_iterations {
+        let derive_context_cmd = DeriveContextCmd {
+            handle,
+            data: DATA,
+            flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT,
+            tci_type: 0,
+            target_locality: 0,
+        };
+
+        // If we are on the last call to DeriveContext, expect that we get a PL0_USED_DPE_CONTEXT_THRESHOLD_EXCEEDED error.
+        if i == num_iterations - 1 {
+            let resp = execute_dpe_cmd(
+                &mut model,
+                &mut Command::DeriveContext(derive_context_cmd),
+                DpeResult::MboxCmdFailure(
+                    caliptra_drivers::CaliptraError::RUNTIME_PL0_USED_DPE_CONTEXT_THRESHOLD_REACHED,
+                ),
+            );
+            assert!(resp.is_none());
+            break;
+        }
+
+        let resp = execute_dpe_cmd(
+            &mut model,
+            &mut Command::DeriveContext(derive_context_cmd),
+            DpeResult::Success,
+        );
+        let Some(Response::DeriveContext(derive_context_resp)) = resp else {
+            panic!("Wrong response type!");
+        };
+        handle = derive_context_resp.handle;
+    }
+}
+
+
 #[test]
 fn smoke_test() {
     let security_state = *SecurityState::default()
@@ -144,14 +212,15 @@ fn smoke_test() {
         .set_device_lifecycle(DeviceLifecycle::Production);
     let idevid_pubkey = get_idevid_pubkey();
 
+    let mut image_opts = ImageOptions::default();
+    image_opts.vendor_config.pl0_pauser = Some(0x1);
+    image_opts.fmc_svn = 9;
+
     let rom = caliptra_builder::rom_for_fw_integration_tests().unwrap();
     let image = caliptra_builder::build_and_sign_image(
         &firmware::FMC_WITH_UART,
         &firmware::APP_WITH_UART,
-        ImageOptions {
-            fmc_svn: 9,
-            ..Default::default()
-        },
+        image_opts,
     )
     .unwrap();
     let vendor_pk_hash = sha384(image.manifest.preamble.vendor_pub_keys.as_bytes());
@@ -179,6 +248,11 @@ fn smoke_test() {
         },
     )
     .unwrap();
+
+    if cfg!(feature = "fpga_realtime") {
+        assert_eq!(hw.type_name(), "ModelFpgaRealtime");
+        hw.set_apb_pauser(0x02);
+    } 
 
     if firmware::rom_from_env() == &firmware::ROM_WITH_UART {
         hw.step_until_output_contains("[rt] Runtime listening for mailbox commands...\n")

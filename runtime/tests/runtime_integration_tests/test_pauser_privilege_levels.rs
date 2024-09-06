@@ -10,7 +10,7 @@ use caliptra_common::mailbox_api::{
     PopulateIdevCertReq, StashMeasurementReq,
 };
 use caliptra_error::CaliptraError;
-use caliptra_hw_model::{BootParams, Fuses, HwModel, InitParams, SecurityState};
+use caliptra_hw_model::{BootParams, DefaultHwModel, Fuses, HwModel, InitParams, SecurityState};
 use caliptra_image_crypto::OsslCrypto as Crypto;
 use caliptra_image_elf::ElfExecutable;
 use caliptra_image_gen::{ImageGenerator, ImageGeneratorConfig};
@@ -169,6 +169,9 @@ fn test_pl0_init_ctx_dpe_context_thresholds() {
         m.soc_ifc().cptra_boot_status().read() == u32::from(RtBootStatus::RtReadyForCommands)
     });
 
+    pl0_init_ctx_dpe_context_thresholds(&mut model);
+}
+fn pl0_init_ctx_dpe_context_thresholds(model: &mut DefaultHwModel) {
     let num_iterations = PL0_DPE_ACTIVE_CONTEXT_THRESHOLD;
     for i in 0..num_iterations {
         let init_ctx_cmd = InitCtxCmd::new_simulation();
@@ -176,7 +179,7 @@ fn test_pl0_init_ctx_dpe_context_thresholds() {
         // If we are on the last call to InitializeContext, expect that we get a PL0_USED_DPE_CONTEXT_THRESHOLD_EXCEEDED error.
         if i == num_iterations - 1 {
             let resp = execute_dpe_cmd(
-                &mut model,
+                model,
                 &mut Command::InitCtx(init_ctx_cmd),
                 DpeResult::MboxCmdFailure(
                     caliptra_drivers::CaliptraError::RUNTIME_PL0_USED_DPE_CONTEXT_THRESHOLD_REACHED,
@@ -187,7 +190,7 @@ fn test_pl0_init_ctx_dpe_context_thresholds() {
         }
 
         let resp = execute_dpe_cmd(
-            &mut model,
+            model,
             &mut Command::InitCtx(init_ctx_cmd),
             DpeResult::Success,
         );
@@ -195,6 +198,134 @@ fn test_pl0_init_ctx_dpe_context_thresholds() {
             panic!("Wrong response type!");
         };
     }
+}
+
+
+fn pl0_derive_context_dpe_context_thresholds(model : &mut DefaultHwModel) {
+
+    // First rotate the default context so that we don't run into an error
+    // when trying to retain the default context in derive child.
+    let rotate_ctx_cmd = RotateCtxCmd {
+        handle: ContextHandle::default(),
+        flags: RotateCtxFlags::empty(),
+    };
+    let resp = execute_dpe_cmd(
+        model,
+        &mut Command::RotateCtx(rotate_ctx_cmd),
+        DpeResult::Success,
+    );
+    let Some(Response::RotateCtx(rotate_ctx_resp)) = resp else {
+        panic!("Wrong response type!");
+    };
+    let mut handle = rotate_ctx_resp.handle;
+
+    // Call DeriveContext with PL0 enough times to breach the threshold on the last iteration.
+    // Note that this loop runs exactly PL0_DPE_ACTIVE_CONTEXT_THRESHOLD times. When we initialize
+    // DPE, we measure mailbox valid pausers in pl0_pauser's locality. Thus, we can call derive child
+    // from PL0 exactly 7 times, and the last iteration of this loop, is expected to throw a threshold breached error.
+    let num_iterations = PL0_DPE_ACTIVE_CONTEXT_THRESHOLD;
+    for i in 0..num_iterations {
+        let derive_context_cmd = DeriveContextCmd {
+            handle,
+            data: DATA,
+            flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT,
+            tci_type: 0,
+            target_locality: 0,
+        };
+
+        // If we are on the last call to DeriveContext, expect that we get a PL0_USED_DPE_CONTEXT_THRESHOLD_EXCEEDED error.
+        if i == num_iterations - 1 {
+            let resp = execute_dpe_cmd(
+                model,
+                &mut Command::DeriveContext(derive_context_cmd),
+                DpeResult::MboxCmdFailure(
+                    caliptra_drivers::CaliptraError::RUNTIME_PL0_USED_DPE_CONTEXT_THRESHOLD_REACHED,
+                ),
+            );
+            assert!(resp.is_none());
+            break;
+        }
+
+        let resp = execute_dpe_cmd(
+            model,
+            &mut Command::DeriveContext(derive_context_cmd),
+            DpeResult::Success,
+        );
+        let Some(Response::DeriveContext(derive_context_resp)) = resp else {
+            panic!("Wrong response type!");
+        };
+        handle = derive_context_resp.handle;
+    }
+}
+
+
+#[test]
+fn my_test() {
+    fn send_certy_key(model : &mut DefaultHwModel) {
+        let certify_key_cmd = CertifyKeyCmd {
+            handle: ContextHandle::default(),
+            label: TEST_LABEL,
+            flags: CertifyKeyFlags::empty(),
+            format: CertifyKeyCmd::FORMAT_X509,
+        };
+        let resp = execute_dpe_cmd(
+            model,
+            &mut Command::CertifyKey(certify_key_cmd),
+            DpeResult::Success,
+        );
+        let Some(Response::CertifyKey(certify_key_resp)) = resp else {
+            panic!("Wrong response type!");
+        };
+        assert!(certify_key_resp.cert_size < 2048);
+     
+    }
+  
+    let security_state = *SecurityState::default()
+        .set_debug_locked(true)
+        .set_device_lifecycle(DeviceLifecycle::Production);
+    let idevid_pubkey = get_idevid_pubkey();
+
+    let mut image_opts = ImageOptions::default();
+    image_opts.vendor_config.pl0_pauser = Some(0x1);
+    image_opts.fmc_svn = 9;
+
+    let rom = caliptra_builder::rom_for_fw_integration_tests().unwrap();
+    let image = caliptra_builder::build_and_sign_image(
+        &firmware::FMC_WITH_UART,
+        &firmware::APP_WITH_UART,
+        image_opts,
+    )
+    .unwrap();
+    let vendor_pk_hash = sha384(image.manifest.preamble.vendor_pub_keys.as_bytes());
+    let owner_pk_hash = sha384(image.manifest.preamble.owner_pub_keys.as_bytes());
+    let vendor_pk_hash_words = bytes_to_be_words_48(&vendor_pk_hash);
+    let owner_pk_hash_words = bytes_to_be_words_48(&owner_pk_hash);
+
+    let fuses = Fuses {
+        key_manifest_pk_hash: vendor_pk_hash_words,
+        owner_pk_hash: owner_pk_hash_words,
+        fmc_key_manifest_svn: 0b1111111,
+        lms_verify: true,
+        ..Default::default()
+    };
+    let mut hw = caliptra_hw_model::new(
+        InitParams {
+            rom: &rom,
+            security_state,
+            ..Default::default()
+        },
+        BootParams {
+            fuses,
+            fw_image: Some(&image.to_bytes().unwrap()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    if cfg!(feature = "fpga_realtime") {
+        assert_eq!(hw.type_name(), "ModelFpgaRealtime");
+        hw.set_apb_pauser(0x02);
+    } 
 }
 
 #[test]
@@ -208,6 +339,10 @@ fn test_pl1_init_ctx_dpe_context_thresholds() {
         m.soc_ifc().cptra_boot_status().read() == u32::from(RtBootStatus::RtReadyForCommands)
     });
 
+    pl1_init_ctx_dpe_context_thresholds(&mut model);
+}
+
+fn pl1_init_ctx_dpe_context_thresholds(model: &mut DefaultHwModel) {
     let num_iterations = PL1_DPE_ACTIVE_CONTEXT_THRESHOLD;
     for i in 0..num_iterations {
         let init_ctx_cmd = InitCtxCmd::new_simulation();
@@ -217,7 +352,7 @@ fn test_pl1_init_ctx_dpe_context_thresholds() {
         // which is PL1.
         if i == num_iterations - 1 {
             let resp = execute_dpe_cmd(
-                &mut model,
+                model,
                 &mut Command::InitCtx(init_ctx_cmd),
                 DpeResult::MboxCmdFailure(
                     caliptra_drivers::CaliptraError::RUNTIME_PL1_USED_DPE_CONTEXT_THRESHOLD_REACHED,
@@ -228,7 +363,7 @@ fn test_pl1_init_ctx_dpe_context_thresholds() {
         }
 
         let resp = execute_dpe_cmd(
-            &mut model,
+            model,
             &mut Command::InitCtx(init_ctx_cmd),
             DpeResult::Success,
         );
@@ -242,6 +377,10 @@ fn test_pl1_init_ctx_dpe_context_thresholds() {
 fn test_populate_idev_cannot_be_called_from_pl1() {
     let mut image_opts = ImageOptions::default();
     image_opts.vendor_config.pl0_pauser = None;
+
+    let mut image_opts = ImageOptions::default();
+    image_opts.vendor_config.pl0_pauser = Some(0x1);
+
 
     let mut model = run_rt_test(None, Some(image_opts), None);
 
