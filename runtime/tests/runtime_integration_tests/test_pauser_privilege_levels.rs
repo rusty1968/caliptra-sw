@@ -41,6 +41,11 @@ fn test_pl0_derive_context_dpe_context_thresholds() {
         m.soc_ifc().cptra_boot_status().read() == u32::from(RtBootStatus::RtReadyForCommands)
     });
 
+    if cfg!(feature = "fpga_realtime") {
+        assert_eq!(model.type_name(), "ModelFpgaRealtime");
+        model.set_apb_pauser(0x02);
+    }        
+    
     // First rotate the default context so that we don't run into an error
     // when trying to retain the default context in derive child.
     let rotate_ctx_cmd = RotateCtxCmd {
