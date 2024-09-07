@@ -77,6 +77,12 @@ pub type DefaultHwModel = ModelVerilated;
 #[cfg(feature = "fpga_realtime")]
 pub type DefaultHwModel = ModelFpgaRealtime;
 
+pub enum ValidPaUsers {
+    Pl0 = 0x1,
+    Pl1 = 0x02,
+}
+pub const DEFAULT_APB_PAUSER: u32 = ValidPaUsers::Pl0 as u32;
+
 /// Constructs an HwModel based on the cargo features and environment
 /// variables. Most test cases that need to construct a HwModel should use this
 /// function over HwModel::new_unbooted().
@@ -248,6 +254,9 @@ pub struct BootParams<'a> {
     pub initial_dbg_manuf_service_reg: u32,
     pub initial_repcnt_thresh_reg: Option<CptraItrngEntropyConfig1WriteVal>,
     pub initial_adaptp_thresh_reg: Option<CptraItrngEntropyConfig0WriteVal>,
+    #[cfg(feature = "fpga_realtime")]
+    pub valid_pauser: [u32; 2],
+    #[cfg(not(feature = "fpga_realtime"))]
     pub valid_pauser: u32,
     pub wdt_timeout_cycles: u64,
 }
@@ -260,6 +269,9 @@ impl<'a> Default for BootParams<'a> {
             initial_dbg_manuf_service_reg: Default::default(),
             initial_repcnt_thresh_reg: Default::default(),
             initial_adaptp_thresh_reg: Default::default(),
+            #[cfg(feature = "fpga_realtime")]
+            valid_pauser: [ValidPaUsers::Pl0 as u32, ValidPaUsers::Pl1 as u32],
+            #[cfg(not(feature = "fpga_realtime"))]
             valid_pauser: 0x1,
             wdt_timeout_cycles: EXPECTED_CALIPTRA_BOOT_TIME_IN_CYCLES,
         }
@@ -531,15 +543,31 @@ pub trait HwModel {
                 .write(|_| reg);
         }
 
-        // Set up the PAUSER as valid for the mailbox (using index 0)
-        self.soc_ifc()
-            .cptra_mbox_valid_pauser()
-            .at(0)
-            .write(|_| boot_params.valid_pauser);
-        self.soc_ifc()
-            .cptra_mbox_pauser_lock()
-            .at(0)
-            .write(|w| w.lock(true));
+        // Set up two valid PAUSERs  for the mailbox
+        #[cfg(not(feature = "fpga_realtime"))]
+        {
+            self.soc_ifc()
+                .cptra_mbox_valid_pauser()
+                .at(0)
+                .write(|_| boot_params.valid_pauser);
+            self.soc_ifc()
+                .cptra_mbox_pauser_lock()
+                .at(0)
+                .write(|w| w.lock(true));
+        }
+        #[cfg(feature = "fpga_realtime")]
+        {
+            for idx in 0..2 {
+                self.soc_ifc()
+                    .cptra_mbox_valid_pauser()
+                    .at(idx)
+                    .write(|_| boot_params.valid_pauser[idx]);
+                self.soc_ifc()
+                    .cptra_mbox_pauser_lock()
+                    .at(idx)
+                    .write(|w| w.lock(true));
+            }
+        }
 
         writeln!(self.output().logger(), "writing to cptra_bootfsm_go")?;
         self.soc_ifc().cptra_bootfsm_go().write(|w| w.go(true));
@@ -1312,7 +1340,7 @@ mod tests {
     // Currently only possible on verilator
     // SW emulator does not support pauser
     // For FPGA, test case needs to be reworked to capture SIGBUS from linux environment
-    #[cfg(feature = "verilator")]
+    #[cfg(any(feature = "verilator", feature = "fpga_realtime"))]
     fn test_mbox_pauser() {
         let mut model = caliptra_hw_model::new_unbooted(InitParams {
             rom: &gen_image_hi(),
