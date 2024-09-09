@@ -18,6 +18,9 @@ use dpe::{
     },
 };
 
+#[cfg(feature = "fpga_realtime")]
+use dpe::{commands::DeriveContextFlags, context::ContextHandle};
+
 use openssl::{
     asn1::{Asn1Integer, Asn1Time},
     bn::BigNum,
@@ -171,7 +174,6 @@ pub fn derive_context(
     flags: DeriveContextFlags,
 ) -> Option<Response> {
     use dpe::commands::DeriveContextCmd;
-    use dpe::commands::DeriveContextFlags;
     use dpe::context::ContextHandle;
     use dpe::DPE_PROFILE;
 
@@ -192,7 +194,7 @@ pub fn derive_context(
 }
 
 #[cfg(feature = "fpga_realtime")]
-pub fn send_certy_key(model: &mut DefaultHwModel) {
+pub fn send_cert_key(model: &mut DefaultHwModel) {
     use dpe::commands::CertifyKeyCmd;
     use dpe::commands::CertifyKeyFlags;
 

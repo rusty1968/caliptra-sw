@@ -31,6 +31,9 @@ use zerocopy::AsBytes;
 
 use crate::common::{assert_error, execute_dpe_cmd, run_rt_test, DpeResult, TEST_LABEL};
 
+#[cfg(feature = "fpga_realtime")]
+use crate::common::{derive_context, send_cert_key};
+
 const DATA: [u8; DPE_PROFILE.get_hash_size()] = [0u8; 48];
 
 #[test]
@@ -200,8 +203,7 @@ fn test_pl0_init_ctx_dpe_context_thresholds() {
 #[cfg(feature = "fpga_realtime")]
 #[test]
 fn test_dpe_cert_size() {
-    use crate::common::{derive_context, execute_dpe_cmd};
-
+ 
     let mut image_opts = ImageOptions::default();
     image_opts.vendor_config.pl0_pauser = Some(0x1);
 
@@ -223,7 +225,7 @@ fn test_dpe_cert_size() {
     for i in 1..16 {
         derive_context(&mut model, i, 0x02, DeriveContextFlags::MAKE_DEFAULT);
     }
-    send_certy_key(&mut model);
+    send_cert_key(&mut model);
 }
 
 #[test]
