@@ -63,22 +63,23 @@ fn test_set_locality() {
 
         model.set_apb_pauser(0x02);
 
-        let derive_context_cmd = DeriveContextCmd {
-            handle: ContextHandle::default(),
-            data: DATA,
-            flags: DeriveContextFlags::MAKE_DEFAULT,
-            tci_type: 0,
-            target_locality: 2,
-        };
-
-        let resp = execute_dpe_cmd(
-            &mut model,
-            &mut Command::DeriveContext(derive_context_cmd),
-            DpeResult::MboxCmdFailure(
-                caliptra_drivers::CaliptraError::RUNTIME_PL0_USED_DPE_CONTEXT_THRESHOLD_REACHED,
-            ),
-        ).unwrap();
-
+        for i in 1..15 {
+            let derive_context_cmd = DeriveContextCmd {
+                handle: ContextHandle::default(),
+                data: DATA,
+                flags: DeriveContextFlags::MAKE_DEFAULT,
+                tci_type: 0,
+                target_locality: 2,
+            };
+    
+            let resp = execute_dpe_cmd(
+                &mut model,
+                &mut Command::DeriveContext(derive_context_cmd),
+                DpeResult::MboxCmdFailure(
+                    caliptra_drivers::CaliptraError::RUNTIME_PL0_USED_DPE_CONTEXT_THRESHOLD_REACHED,
+                ),
+            ).unwrap();    
+        }
 
         model.set_apb_pauser(0x01);
     } 
