@@ -539,6 +539,7 @@ pub trait HwModel {
 
         // Set up two valid PAUSERs  for the mailbox
         for idx in 0..2 {
+        println!("Valid pauser : {}", boot_params.valid_pauser[idx]);
         self.soc_ifc()
             .cptra_mbox_valid_pauser()
                 .at(idx)
