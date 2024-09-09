@@ -539,15 +539,15 @@ pub trait HwModel {
 
         // Set up two valid PAUSERs  for the mailbox
         for idx in 0..2 {
-        println!("Valid pauser : {}", boot_params.valid_pauser[idx]);
-        self.soc_ifc()
-            .cptra_mbox_valid_pauser()
+            println!("Valid pauser : {}", boot_params.valid_pauser[idx]);
+            self.soc_ifc()
+                .cptra_mbox_valid_pauser()
                 .at(idx)
                 .write(|_| boot_params.valid_pauser[idx]);
-        self.soc_ifc()
-            .cptra_mbox_pauser_lock()
+            self.soc_ifc()
+                .cptra_mbox_pauser_lock()
                 .at(idx)
-            .write(|w| w.lock(true));
+                .write(|w| w.lock(true));
         }
 
         writeln!(self.output().logger(), "writing to cptra_bootfsm_go")?;

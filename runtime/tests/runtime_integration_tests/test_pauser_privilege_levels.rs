@@ -29,7 +29,7 @@ use dpe::{
 };
 use zerocopy::AsBytes;
 
-use crate::common::{assert_error, execute_dpe_cmd, derive_context, run_rt_test, send_certy_key, DpeResult, TEST_LABEL};
+use crate::common::{assert_error, execute_dpe_cmd, run_rt_test, DpeResult, TEST_LABEL};
 
 const DATA: [u8; DPE_PROFILE.get_hash_size()] = [0u8; 48];
 
@@ -200,33 +200,31 @@ fn test_pl0_init_ctx_dpe_context_thresholds() {
 #[cfg(feature = "fpga_realtime")]
 #[test]
 fn test_dpe_cert_size() {
+    use crate::common::{derive_context, execute_dpe_cmd};
+
     let mut image_opts = ImageOptions::default();
     image_opts.vendor_config.pl0_pauser = Some(0x1);
 
-
     let mut model = run_rt_test(None, Some(image_opts), None);
-
 
     model.step_until(|m| {
         m.soc_ifc().cptra_boot_status().read() == u32::from(RtBootStatus::RtReadyForCommands)
     });
 
-    for i in 0..16  {
-        derive_context(&mut model , i, 0x01, DeriveContextFlags::MAKE_DEFAULT);
-    }   
+    for i in 1..12 {
+        derive_context(&mut model, i, 0x01, DeriveContextFlags::MAKE_DEFAULT);
+    }
+    // Fix
+    derive_context(&mut model, 0, 0x02, DeriveContextFlags::CHANGE_LOCALITY);
 
     assert_eq!(model.type_name(), "ModelFpgaRealtime");
     model.set_apb_pauser(0x02);
-    derive_context(&mut model , 0, 0x02, DeriveContextFlags::CHANGE_LOCALITY);
-
 
     for i in 1..16 {
-        derive_context(&mut model , i, 0x02, DeriveContextFlags::MAKE_DEFAULT);
-    }   
+        derive_context(&mut model, i, 0x02, DeriveContextFlags::MAKE_DEFAULT);
+    }
     send_certy_key(&mut model);
- 
 }
-
 
 #[test]
 fn test_pl1_init_ctx_dpe_context_thresholds() {

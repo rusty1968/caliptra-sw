@@ -17,11 +17,6 @@ use dpe::{
         Response, ResponseHdr, SignResp,
     },
 };
-use dpe::context::ContextHandle;
-use dpe::commands::CertifyKeyFlags;
-use dpe::commands::CertifyKeyCmd;
-use dpe::commands::DeriveContextCmd;
-use dpe::commands::DeriveContextFlags;
 
 use openssl::{
     asn1::{Asn1Integer, Asn1Time},
@@ -168,9 +163,18 @@ pub enum DpeResult {
     MboxCmdFailure(CaliptraError),
 }
 
-pub fn derive_context(model: &mut DefaultHwModel, tci_type: u32, target_locality: u32, flags: DeriveContextFlags) -> Option<Response> {
+#[cfg(feature = "fpga_realtime")]
+pub fn derive_context(
+    model: &mut DefaultHwModel,
+    tci_type: u32,
+    target_locality: u32,
+    flags: DeriveContextFlags,
+) -> Option<Response> {
+    use dpe::commands::DeriveContextCmd;
+    use dpe::commands::DeriveContextFlags;
+    use dpe::context::ContextHandle;
     use dpe::DPE_PROFILE;
-    
+
     const DATA: [u8; DPE_PROFILE.get_hash_size()] = [0u8; 48];
 
     let derive_context_cmd = DeriveContextCmd {
@@ -184,10 +188,14 @@ pub fn derive_context(model: &mut DefaultHwModel, tci_type: u32, target_locality
         model,
         &mut Command::DeriveContext(derive_context_cmd),
         DpeResult::Success,
-    )    
+    )
 }
 
-pub fn send_certy_key(model : &mut DefaultHwModel) {
+#[cfg(feature = "fpga_realtime")]
+pub fn send_certy_key(model: &mut DefaultHwModel) {
+    use dpe::commands::CertifyKeyCmd;
+    use dpe::commands::CertifyKeyFlags;
+
     let certify_key_cmd = CertifyKeyCmd {
         handle: ContextHandle::default(),
         label: TEST_LABEL,
@@ -202,9 +210,8 @@ pub fn send_certy_key(model : &mut DefaultHwModel) {
     let Some(Response::CertifyKey(certify_key_resp)) = resp else {
         panic!("Wrong response type!");
     };
-    assert!(certify_key_resp.cert_size < 2048);     
+    assert!(certify_key_resp.cert_size < 2048);
 }
-
 
 pub fn execute_dpe_cmd(
     model: &mut DefaultHwModel,
