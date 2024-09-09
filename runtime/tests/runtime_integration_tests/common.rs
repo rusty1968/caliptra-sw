@@ -168,7 +168,7 @@ pub enum DpeResult {
     MboxCmdFailure(CaliptraError),
 }
 
-pub fn derive_context(model: &mut DefaultHwModel, tci_type: u32, target_locality: u32) -> Option<Response> {
+pub fn derive_context(model: &mut DefaultHwModel, tci_type: u32, target_locality: u32, flags: DeriveContextFlags) -> Option<Response> {
     use dpe::DPE_PROFILE;
     
     const DATA: [u8; DPE_PROFILE.get_hash_size()] = [0u8; 48];
@@ -176,7 +176,7 @@ pub fn derive_context(model: &mut DefaultHwModel, tci_type: u32, target_locality
     let derive_context_cmd = DeriveContextCmd {
         handle: ContextHandle::default(),
         data: DATA,
-        flags: DeriveContextFlags::MAKE_DEFAULT,
+        flags,
         tci_type,
         target_locality,
     };

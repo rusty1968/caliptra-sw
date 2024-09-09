@@ -211,7 +211,7 @@ fn test_dpe_cert_size() {
     });
 
     for i in 1..15  {
-        derive_context(&mut model , i, 0x01);
+        derive_context(&mut model , i, 0x01, DeriveContextFlags::MAKE_DEFAULT);
     }   
 
     if cfg!(feature = "fpga_realtime") {
@@ -221,7 +221,7 @@ fn test_dpe_cert_size() {
 
 
     for i in 1..16 {
-        derive_context(&mut model , i, 0x02);
+        derive_context(&mut model , i, 0x02, DeriveContextFlags::CHANGE_LOCALITY);
     }   
     send_certy_key(&mut model);
  
