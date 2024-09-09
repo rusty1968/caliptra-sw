@@ -58,7 +58,7 @@ fn test_set_locality() {
             DpeResult::MboxCmdFailure(
                 caliptra_drivers::CaliptraError::RUNTIME_PL0_USED_DPE_CONTEXT_THRESHOLD_REACHED,
             ),
-        );
+        ).unwrap();
 
 
         model.set_apb_pauser(0x02);
@@ -77,7 +77,7 @@ fn test_set_locality() {
             DpeResult::MboxCmdFailure(
                 caliptra_drivers::CaliptraError::RUNTIME_PL0_USED_DPE_CONTEXT_THRESHOLD_REACHED,
             ),
-        );
+        ).unwrap();
 
 
         model.set_apb_pauser(0x01);
