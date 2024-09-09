@@ -217,11 +217,12 @@ fn test_dpe_cert_size() {
     if cfg!(feature = "fpga_realtime") {
         assert_eq!(model.type_name(), "ModelFpgaRealtime");
         model.set_apb_pauser(0x02);
+        derive_context(&mut model , i, 0x02, DeriveContextFlags::CHANGE_LOCALITY);
     } 
 
 
     for i in 1..16 {
-        derive_context(&mut model , i, 0x02, DeriveContextFlags::CHANGE_LOCALITY);
+        derive_context(&mut model , i, 0x02, DeriveContextFlags::MAKE_DEFAULT);
     }   
     send_certy_key(&mut model);
  
