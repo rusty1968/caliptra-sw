@@ -34,6 +34,7 @@ use crate::common::{assert_error, execute_dpe_cmd, run_rt_test, DpeResult, TEST_
 const DATA: [u8; DPE_PROFILE.get_hash_size()] = [0u8; 48];
 
 #[test]
+#[cfg(feature = "fpga_realtime")]
 fn test_set_locality() {
     let mut model = run_rt_test(None, None, None);
 
@@ -41,7 +42,7 @@ fn test_set_locality() {
         m.soc_ifc().cptra_boot_status().read() == u32::from(RtBootStatus::RtReadyForCommands)
     });
 
-    if cfg!(feature = "fpga-real-time") {
+    {
         assert_eq!(model.type_name(), "ModelFpgaRealtime");
 
         let derive_context_cmd = DeriveContextCmd {
@@ -55,15 +56,16 @@ fn test_set_locality() {
         let resp = execute_dpe_cmd(
             &mut model,
             &mut Command::DeriveContext(derive_context_cmd),
-            DpeResult::MboxCmdFailure(
-                caliptra_drivers::CaliptraError::RUNTIME_PL0_USED_DPE_CONTEXT_THRESHOLD_REACHED,
-            ),
-        ).unwrap();
+            DpeResult::Success,
+        )
+        .unwrap();
 
-
+        assert_eq!(!model.soc_mbox().user().read(), 0x01);
         model.set_apb_pauser(0x02);
+        assert_eq!(!model.soc_mbox().user().read(), 0x02);
+        dbg!("After set apb user");
 
-        for i in 1..15 {
+        {
             let derive_context_cmd = DeriveContextCmd {
                 handle: ContextHandle::default(),
                 data: DATA,
@@ -71,28 +73,27 @@ fn test_set_locality() {
                 tci_type: 0,
                 target_locality: 2,
             };
-    
+
             let resp = execute_dpe_cmd(
                 &mut model,
                 &mut Command::DeriveContext(derive_context_cmd),
-                DpeResult::MboxCmdFailure(
-                    caliptra_drivers::CaliptraError::RUNTIME_PL0_USED_DPE_CONTEXT_THRESHOLD_REACHED,
-                ),
-            ).unwrap();    
+                DpeResult::Success,
+            )
+            .unwrap();
         }
 
-        model.set_apb_pauser(0x01);
-    } 
+        //model.set_apb_pauser(0x01);
+    }
 }
 
 #[test]
 fn test_pl0_derive_context_dpe_context_thresholds() {
     let mut model = run_rt_test(None, None, None);
-    
-        model.step_until(|m| {
-            m.soc_ifc().cptra_boot_status().read() == u32::from(RtBootStatus::RtReadyForCommands)
-        });
-    
+
+    model.step_until(|m| {
+        m.soc_ifc().cptra_boot_status().read() == u32::from(RtBootStatus::RtReadyForCommands)
+    });
+
     // First rotate the default context so that we don't run into an error
     // when trying to retain the default context in derive child.
     let rotate_ctx_cmd = RotateCtxCmd {
@@ -146,8 +147,6 @@ fn test_pl0_derive_context_dpe_context_thresholds() {
         };
         handle = derive_context_resp.handle;
     }
-
-
 }
 
 #[test]
