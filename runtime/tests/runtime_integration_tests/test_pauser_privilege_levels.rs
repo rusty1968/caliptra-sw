@@ -197,6 +197,7 @@ fn test_pl0_init_ctx_dpe_context_thresholds() {
     }
 }
 
+#[cfg(feature = "fpga_realtime")]
 #[test]
 fn test_dpe_cert_size() {
     let mut image_opts = ImageOptions::default();
@@ -210,15 +211,13 @@ fn test_dpe_cert_size() {
         m.soc_ifc().cptra_boot_status().read() == u32::from(RtBootStatus::RtReadyForCommands)
     });
 
-    for i in 1..15  {
+    for i in 0..16  {
         derive_context(&mut model , i, 0x01, DeriveContextFlags::MAKE_DEFAULT);
     }   
 
-    if cfg!(feature = "fpga_realtime") {
-        assert_eq!(model.type_name(), "ModelFpgaRealtime");
-        model.set_apb_pauser(0x02);
-        derive_context(&mut model , 0, 0x02, DeriveContextFlags::CHANGE_LOCALITY);
-    } 
+    assert_eq!(model.type_name(), "ModelFpgaRealtime");
+    model.set_apb_pauser(0x02);
+    derive_context(&mut model , 0, 0x02, DeriveContextFlags::CHANGE_LOCALITY);
 
 
     for i in 1..16 {
