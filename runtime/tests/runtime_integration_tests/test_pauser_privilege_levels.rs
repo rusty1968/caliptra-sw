@@ -94,6 +94,13 @@ fn test_pl0_derive_context_dpe_context_thresholds() {
         };
         handle = derive_context_resp.handle;
     }
+
+    if cfg!(feature = "fpga-real-time") {
+        assert_eq!(model.type_name(), "ModelFpgaRealtime");
+        model.set_apb_pauser(0x02);
+        model.set_apb_pauser(0x01);
+    } 
+
 }
 
 #[test]
