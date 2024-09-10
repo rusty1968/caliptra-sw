@@ -41,9 +41,30 @@ fn test_set_locality() {
     model.step_until(|m| {
         m.soc_ifc().cptra_boot_status().read() == u32::from(RtBootStatus::RtReadyForCommands)
     });
+    assert_eq!(model.type_name(), "ModelFpgaRealtime");
 
+    // PL0
+    for i in 1..8
     {
-        assert_eq!(model.type_name(), "ModelFpgaRealtime");
+        let derive_context_cmd = DeriveContextCmd {
+            handle: ContextHandle::default(),
+            data: DATA,
+            flags: DeriveContextFlags::MAKE_DEFAULT | DeriveContextFlags::INPUT_ALLOW_X509,
+            tci_type: 0,
+            target_locality: 2,
+        };
+
+        let resp = execute_dpe_cmd(
+            &mut model,
+            &mut Command::DeriveContext(derive_context_cmd),
+            DpeResult::Success,
+        )
+        .unwrap();
+    }
+
+
+    // PL1
+    {
 
         let derive_context_cmd = DeriveContextCmd {
             handle: ContextHandle::default(),
@@ -63,7 +84,7 @@ fn test_set_locality() {
         dbg!("Before set apb user");
         model.set_apb_pauser(0x02);
         dbg!("After set apb user");
-        for i in 1..16
+        for i in 1..15
         {
             let derive_context_cmd = DeriveContextCmd {
                 handle: ContextHandle::default(),
