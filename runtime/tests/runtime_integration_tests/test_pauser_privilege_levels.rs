@@ -51,7 +51,7 @@ fn test_set_locality() {
             data: DATA,
             flags: DeriveContextFlags::MAKE_DEFAULT | DeriveContextFlags::INPUT_ALLOW_X509,
             tci_type: 0,
-            target_locality: 2,
+            target_locality: 1,
         };
 
         let resp = execute_dpe_cmd(
