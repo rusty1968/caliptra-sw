@@ -60,12 +60,10 @@ fn test_set_locality() {
         )
         .unwrap();
 
-        //assert_eq!(!model.soc_mbox().user().read(), 0x01);
         dbg!("Before set apb user");
         model.set_apb_pauser(0x02);
         dbg!("After set apb user");
-        //assert_eq!(!model.soc_mbox().user().read(), 0x02);
-
+        for i in 1..15
         {
             let derive_context_cmd = DeriveContextCmd {
                 handle: ContextHandle::default(),
