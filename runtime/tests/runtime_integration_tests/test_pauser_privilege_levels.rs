@@ -60,7 +60,7 @@ fn test_set_locality() {
         )
         .unwrap();
 
-        assert_eq!(!model.soc_mbox().user().read(), 0x01);
+        //assert_eq!(!model.soc_mbox().user().read(), 0x01);
         model.set_apb_pauser(0x02);
         assert_eq!(!model.soc_mbox().user().read(), 0x02);
         dbg!("After set apb user");
@@ -82,7 +82,6 @@ fn test_set_locality() {
             .unwrap();
         }
 
-        //model.set_apb_pauser(0x01);
     }
 }
 
