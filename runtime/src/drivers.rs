@@ -565,7 +565,7 @@ impl Drivers {
             .map_err(|_| CaliptraError::RUNTIME_INTERNAL)?
             - used_pl0_dpe_context_count;
 
-        match (
+        let res = match (
             Self::is_caller_pl1(pl0_pauser, flags, locality),
             used_pl1_dpe_context_count.cmp(&PL1_DPE_ACTIVE_CONTEXT_THRESHOLD),
             used_pl0_dpe_context_count.cmp(&PL0_DPE_ACTIVE_CONTEXT_THRESHOLD),
@@ -579,7 +579,12 @@ impl Drivers {
                 Err(CaliptraError::RUNTIME_PL0_USED_DPE_CONTEXT_THRESHOLD_EXCEEDED)
             }
             _ => Ok(()),
+        };
+
+        if res.is_err() {
+            caliptra_common::cprintln!("threshold exceeded");
         }
+        res
     }
 
     /// Checks if the caller is privilege level 1
