@@ -44,7 +44,7 @@ fn test_set_locality() {
     assert_eq!(model.type_name(), "ModelFpgaRealtime");
 
     // PL0
-    for i in 1..8
+    for i in 1..15
     {
         let derive_context_cmd = DeriveContextCmd {
             handle: ContextHandle::default(),
