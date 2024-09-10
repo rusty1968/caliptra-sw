@@ -63,7 +63,7 @@ fn test_set_locality() {
         dbg!("Before set apb user");
         model.set_apb_pauser(0x02);
         dbg!("After set apb user");
-        for i in 1..15
+        for i in 1..16
         {
             let derive_context_cmd = DeriveContextCmd {
                 handle: ContextHandle::default(),
