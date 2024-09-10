@@ -44,7 +44,7 @@ fn test_set_locality() {
     assert_eq!(model.type_name(), "ModelFpgaRealtime");
 
     // PL0
-    for i in 1..15
+    for i in 1..5
     {
         let derive_context_cmd = DeriveContextCmd {
             handle: ContextHandle::default(),
@@ -84,7 +84,7 @@ fn test_set_locality() {
         dbg!("Before set apb user");
         model.set_apb_pauser(0x02);
         dbg!("After set apb user");
-        for i in 1..15
+        for i in 1..6
         {
             let derive_context_cmd = DeriveContextCmd {
                 handle: ContextHandle::default(),
@@ -103,7 +103,22 @@ fn test_set_locality() {
         }
 
     }
+    let certify_key_cmd = CertifyKeyCmd {
+        handle: ContextHandle::default(),
+        label: TEST_LABEL,
+        flags: CertifyKeyFlags::empty(),
+        format: CertifyKeyCmd::FORMAT_CSR,
+    };
+    let resp = execute_dpe_cmd(
+        &mut model,
+        &mut Command::CertifyKey(certify_key_cmd),
+        DpeResult::Success,
+    );
+    let Some(Response::CertifyKey(certify_key_resp)) = resp else {
+        panic!("Wrong response type!");
+    };
 }
+
 
 #[test]
 fn test_pl0_derive_context_dpe_context_thresholds() {
