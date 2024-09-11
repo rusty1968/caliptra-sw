@@ -209,7 +209,7 @@ impl<'a> Default for InitParams<'a> {
             }),
             random_sram_puf: true,
             trace_path: None,
-            soc_user: MailboxRequester::Soc,
+            soc_user: MailboxRequester::SocUser1,
         }
     }
 }

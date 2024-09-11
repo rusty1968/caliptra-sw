@@ -108,7 +108,7 @@ impl Bus for MailboxExternal {
     /// Read data of specified size from given address
     fn read(&mut self, size: RvSize, addr: RvAddr) -> Result<RvData, BusError> {
         let mut regs = self.regs.borrow_mut();
-        regs.set_request(MailboxRequester::Soc);
+        regs.set_request(self._soc_user);
         let result = regs.read(size, addr);
         regs.set_request(MailboxRequester::Caliptra);
         result
@@ -117,7 +117,7 @@ impl Bus for MailboxExternal {
     /// Write data of specified size to given address
     fn write(&mut self, size: RvSize, addr: RvAddr, val: RvData) -> Result<(), BusError> {
         let mut regs = self.regs.borrow_mut();
-        regs.set_request(MailboxRequester::Soc);
+        regs.set_request(self._soc_user);
         let result = regs.write(size, addr, val);
         regs.set_request(MailboxRequester::Caliptra);
         result
@@ -185,26 +185,20 @@ impl Bus for MailboxInternal {
 
 pub enum MailboxRequester {
     Caliptra = 0,
-    Soc = 1,
+    SocUser1 = 1,
+    SocUser2 = 2,
+    SocUser3 = 3,
+    SocUser4 = 4,
 }
 
 impl From<MailboxRequester> for u32 {
     fn from(val: MailboxRequester) -> Self {
         match val {
             MailboxRequester::Caliptra => 0,
-            MailboxRequester::Soc => 1,
-        }
-    }
-}
-
-impl TryFrom<u32> for MailboxRequester {
-    type Error = &'static str;
-
-    fn try_from(value: u32) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(MailboxRequester::Caliptra),
-            1 => Ok(MailboxRequester::Soc),
-            _ => Err("Invalid value for MailboxRequester"),
+            MailboxRequester::SocUser1 => 1,
+            MailboxRequester::SocUser2 => 2,
+            MailboxRequester::SocUser3 => 3,
+            MailboxRequester::SocUser4 => 4,
         }
     }
 }
@@ -720,7 +714,7 @@ mod tests {
     #[test]
     fn test_soc_to_caliptra_lock() {
         let mut caliptra = MailboxInternal::new(&Clock::new(), MailboxRam::new());
-        let mut soc = caliptra.as_external(MailboxRequester::Soc);
+        let mut soc = caliptra.as_external(MailboxRequester::SocUser1);
         let soc_regs = soc.regs();
 
         assert!(!soc_regs.lock().read().lock());
@@ -737,7 +731,7 @@ mod tests {
         let request_to_send: [u32; 4] = [0x1111_1111, 0x2222_2222, 0x3333_3333, 0x4444_4444];
 
         let mut caliptra = MailboxInternal::new(&Clock::new(), MailboxRam::new());
-        let mut soc = caliptra.as_external(MailboxRequester::Soc);
+        let mut soc = caliptra.as_external(MailboxRequester::SocUser1);
         let soc_regs = soc.regs();
         let uc_regs = caliptra.regs();
 
@@ -745,7 +739,7 @@ mod tests {
         // Confirm it is locked
         assert!(soc_regs.lock().read().lock());
 
-        assert_eq!(soc_regs.user().read(), MailboxRequester::Soc as u32);
+        assert_eq!(soc_regs.user().read(), MailboxRequester::SocUser1 as u32);
 
         // Write command
         soc_regs.cmd().write(|_| 0x55);

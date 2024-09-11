@@ -1187,7 +1187,7 @@ impl SocRegistersImpl {
         }
 
         if self.timer.fired(&mut self.op_fw_read_complete_action) {
-            let soc_mbox = self.mailbox.as_external(MailboxRequester::Soc).regs();
+            let soc_mbox = self.mailbox.as_external(MailboxRequester::SocUser1).regs();
             // uC will set status to CMD_COMPLETE after reading the
             // mailbox data; we can't clear the execute bit until that is done.`
             if !soc_mbox.status().read().status().cmd_busy() {
