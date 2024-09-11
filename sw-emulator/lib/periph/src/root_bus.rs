@@ -357,7 +357,7 @@ impl CaliptraRootBus {
 #[derive(Bus)]
 pub struct SocToCaliptraBus {
     #[peripheral(offset = 0x3002_0000, mask = 0x0000_0fff)]
-    mailbox: MailboxExternal,
+    pub mailbox: MailboxExternal,
 
     #[peripheral(offset = 0x3002_1000, mask = 0x0000_0fff)]
     sha512_acc: Sha512Accelerator,

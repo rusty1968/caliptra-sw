@@ -13,6 +13,7 @@ use caliptra_emu_bus::Clock;
 use caliptra_emu_cpu::CoverageBitmaps;
 use caliptra_emu_cpu::{Cpu, InstrTracer};
 use caliptra_emu_periph::ActionCb;
+use caliptra_emu_periph::MailboxExternal;
 use caliptra_emu_periph::ReadyForFwCb;
 use caliptra_emu_periph::{
     CaliptraRootBus, CaliptraRootBusArgs, MailboxRequester, SocToCaliptraBus, TbServicesCb,
@@ -67,7 +68,6 @@ pub struct ModelEmulated {
     _rom_image_tag: u64,
     iccm_image_tag: Option<u64>,
     trng_mode: TrngMode,
-    soc_user: MailboxRequester,
 }
 
 #[cfg(feature = "coverage")]
@@ -186,7 +186,6 @@ impl crate::HwModel for ModelEmulated {
             _rom_image_tag: image_tag,
             iccm_image_tag: None,
             trng_mode,
-            soc_user: params.soc_user,
         };
         // Turn tracing on if the trace path was set
         m.tracing_hint(true);
@@ -266,7 +265,12 @@ impl crate::HwModel for ModelEmulated {
     }
 
     fn set_apb_pauser(&mut self, _pauser: u32) {
-        self.soc_user = MailboxRequester::Soc;
+        let regs = self.soc_to_caliptra_bus.mailbox.regs.clone();
+        let soc_mailbox = MailboxExternal {
+            _soc_user: MailboxRequester::Soc,
+            regs,
+        };
+        self.soc_to_caliptra_bus.mailbox = soc_mailbox;
     }
 
     fn warm_reset(&mut self) {

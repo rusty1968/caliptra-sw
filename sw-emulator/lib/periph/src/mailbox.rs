@@ -90,8 +90,8 @@ impl Default for MailboxRam {
 
 #[derive(Clone)]
 pub struct MailboxExternal {
-    _soc_user: MailboxRequester,
-    regs: Rc<RefCell<MailboxRegs>>,
+    pub _soc_user: MailboxRequester,
+    pub regs: Rc<RefCell<MailboxRegs>>,
 }
 impl MailboxExternal {
     pub fn regs(&mut self) -> caliptra_registers::mbox::RegisterBlock<BusMmio<Self>> {
