@@ -15,6 +15,7 @@ Abstract:
 use crate::{
     helpers::words_from_bytes_be,
     iccm::Iccm,
+    mailbox::MailboxRequester,
     ml_dsa87::MlDsa87,
     soc_reg::{DebugManufService, SocRegistersExternal},
     AsymEcc384, Csrng, Doe, EmuCtrl, HashSha256, HashSha512, HmacSha384, KeyVault, MailboxExternal,
@@ -344,9 +345,9 @@ impl CaliptraRootBus {
         }
     }
 
-    pub fn soc_to_caliptra_bus(&self) -> SocToCaliptraBus {
+    pub fn soc_to_caliptra_bus(&self, soc_user: MailboxRequester) -> SocToCaliptraBus {
         SocToCaliptraBus {
-            mailbox: self.mailbox.as_external(),
+            mailbox: self.mailbox.as_external(soc_user),
             sha512_acc: self.sha512_acc.clone(),
             soc_ifc: self.soc_reg.external_regs(),
         }

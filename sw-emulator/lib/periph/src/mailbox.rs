@@ -90,6 +90,7 @@ impl Default for MailboxRam {
 
 #[derive(Clone)]
 pub struct MailboxExternal {
+    _soc_user: MailboxRequester,
     regs: Rc<RefCell<MailboxRegs>>,
 }
 impl MailboxExternal {
@@ -146,8 +147,9 @@ impl MailboxInternal {
         }
     }
 
-    pub fn as_external(&self) -> MailboxExternal {
+    pub fn as_external(&self, soc_user: MailboxRequester) -> MailboxExternal {
         MailboxExternal {
+            _soc_user: soc_user,
             regs: self.regs.clone(),
         }
     }
@@ -191,6 +193,18 @@ impl From<MailboxRequester> for u32 {
         match val {
             MailboxRequester::Caliptra => 0,
             MailboxRequester::Soc => 1,
+        }
+    }
+}
+
+impl TryFrom<u32> for MailboxRequester {
+    type Error = &'static str;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(MailboxRequester::Caliptra),
+            1 => Ok(MailboxRequester::Soc),
+            _ => Err("Invalid value for MailboxRequester"),
         }
     }
 }
@@ -706,7 +720,7 @@ mod tests {
     #[test]
     fn test_soc_to_caliptra_lock() {
         let mut caliptra = MailboxInternal::new(&Clock::new(), MailboxRam::new());
-        let mut soc = caliptra.as_external();
+        let mut soc = caliptra.as_external(MailboxRequester::Soc);
         let soc_regs = soc.regs();
 
         assert!(!soc_regs.lock().read().lock());
@@ -723,7 +737,7 @@ mod tests {
         let request_to_send: [u32; 4] = [0x1111_1111, 0x2222_2222, 0x3333_3333, 0x4444_4444];
 
         let mut caliptra = MailboxInternal::new(&Clock::new(), MailboxRam::new());
-        let mut soc = caliptra.as_external();
+        let mut soc = caliptra.as_external(MailboxRequester::Soc);
         let soc_regs = soc.regs();
         let uc_regs = caliptra.regs();
 

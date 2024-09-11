@@ -14,7 +14,9 @@ use caliptra_emu_cpu::CoverageBitmaps;
 use caliptra_emu_cpu::{Cpu, InstrTracer};
 use caliptra_emu_periph::ActionCb;
 use caliptra_emu_periph::ReadyForFwCb;
-use caliptra_emu_periph::{CaliptraRootBus, CaliptraRootBusArgs, SocToCaliptraBus, TbServicesCb};
+use caliptra_emu_periph::{
+    CaliptraRootBus, CaliptraRootBusArgs, MailboxRequester, SocToCaliptraBus, TbServicesCb,
+};
 use caliptra_emu_types::{RvAddr, RvData, RvSize};
 use caliptra_hw_model_types::ErrorInjectionMode;
 use caliptra_image_types::IMAGE_MANIFEST_BYTE_SIZE;
@@ -65,6 +67,7 @@ pub struct ModelEmulated {
     _rom_image_tag: u64,
     iccm_image_tag: Option<u64>,
     trng_mode: TrngMode,
+    soc_user: MailboxRequester,
 }
 
 #[cfg(feature = "coverage")]
@@ -165,7 +168,7 @@ impl crate::HwModel for ModelEmulated {
             };
             dccm_dest.copy_from_slice(params.dccm);
         }
-        let soc_to_caliptra_bus = root_bus.soc_to_caliptra_bus();
+        let soc_to_caliptra_bus = root_bus.soc_to_caliptra_bus(params.soc_user);
         let cpu = Cpu::new(BusLogger::new(root_bus), clock);
 
         let mut hasher = DefaultHasher::new();
@@ -183,6 +186,7 @@ impl crate::HwModel for ModelEmulated {
             _rom_image_tag: image_tag,
             iccm_image_tag: None,
             trng_mode,
+            soc_user: params.soc_user,
         };
         // Turn tracing on if the trace path was set
         m.tracing_hint(true);
@@ -262,7 +266,7 @@ impl crate::HwModel for ModelEmulated {
     }
 
     fn set_apb_pauser(&mut self, _pauser: u32) {
-        unimplemented!();
+        self.soc_user = MailboxRequester::Soc;
     }
 
     fn warm_reset(&mut self) {
