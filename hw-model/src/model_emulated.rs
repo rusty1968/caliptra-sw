@@ -264,10 +264,10 @@ impl crate::HwModel for ModelEmulated {
         }
     }
 
-    fn set_apb_pauser(&mut self, _pauser: u32) {
+    fn set_apb_pauser(&mut self, pauser: u32) {
         let regs = self.soc_to_caliptra_bus.mailbox.regs.clone();
         let soc_mailbox = MailboxExternal {
-            _soc_user: MailboxRequester::SocUser1,
+            _soc_user: MailboxRequester::try_from(pauser).unwrap(),
             regs,
         };
         self.soc_to_caliptra_bus.mailbox = soc_mailbox;

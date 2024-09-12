@@ -191,6 +191,21 @@ pub enum MailboxRequester {
     SocUser4 = 4,
 }
 
+impl TryFrom<u32> for MailboxRequester {
+    type Error = &'static str;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(MailboxRequester::Caliptra),
+            1 => Ok(MailboxRequester::SocUser1),
+            2 => Ok(MailboxRequester::SocUser2),
+            3 => Ok(MailboxRequester::SocUser3),
+            4 => Ok(MailboxRequester::SocUser4),
+            _ => Err("Invalid value for MailboxRequester"),
+        }
+    }
+}
+
 impl From<MailboxRequester> for u32 {
     fn from(val: MailboxRequester) -> Self {
         match val {
