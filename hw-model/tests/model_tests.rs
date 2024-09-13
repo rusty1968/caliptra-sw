@@ -5,6 +5,28 @@ use caliptra_hw_model::{BootParams, DefaultHwModel, HwModel, InitParams};
 use caliptra_hw_model_types::ErrorInjectionMode;
 use caliptra_test_harness_types as harness;
 
+#[cfg(feature = "fpga_realtime")]
+use std::process::{Command, Child};
+#[cfg(feature = "fpga_realtime")]
+use std::thread;
+#[cfg(feature = "fpga_realtime")]
+use std::time::{Duration, Instant};
+
+#[cfg(feature = "fpga_realtime")]
+fn wait_with_timeout(child: &mut Child, timeout: Duration) -> Option<i32> {
+    let start = Instant::now();
+    while start.elapsed() < timeout {
+        match child.try_wait() {
+            Ok(Some(status)) => return status.code(),
+            Ok(None) => thread::sleep(Duration::from_millis(100)), // Check every 100ms
+            Err(_) => return None,
+        }
+    }
+    let _ = child.kill();
+    None
+}
+
+
 fn run_fw_elf(elf: &[u8]) -> DefaultHwModel {
     let rom = caliptra_builder::elf2rom(elf).unwrap();
     let model = caliptra_hw_model::new(
@@ -270,4 +292,19 @@ fn test_pcr_extend() {
     let mut model = run_fw_elf(&elf);
 
     model.step_until_exit_success().unwrap();
+}
+
+#[test]
+#[cfg(feature = "fpga_realtime")]
+fn test_mbox_pauser_sigbus() {
+
+    let program = env!("CARGO_BIN_EXE_fpga_realtime_mbox_pauser");    
+    let mut child = Command::new(program)
+        .spawn()
+        .expect("Failed to start mbox_pauser test utility");
+
+    let exit_code = wait_with_timeout(&mut child, Duration::from_secs(120));
+
+    // Check if the exit code is 42
+    assert_eq!(exit_code, Some(42));    
 }

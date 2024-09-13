@@ -1366,7 +1366,6 @@ mod tests {
         // Set the PAUSER to something invalid
         model.set_apb_pauser(0x2);
 
-
         // Set the PAUSER back to valid
         model.set_apb_pauser(0x1);
 

@@ -1,12 +1,10 @@
+use caliptra_hw_model::{mmio::Rv32GenMmio, HwModel, InitParams};
 use nix::sys::signal;
 use nix::sys::signal::{SaFlags, SigAction, SigHandler, SigSet};
+use std::process::exit;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
-use std::process::exit;
-use caliptra_hw_model::{
-    mmio::Rv32GenMmio, HwModel, InitParams,
-};
 
 use caliptra_registers::soc_ifc;
 
@@ -29,7 +27,6 @@ fn gen_image_hi() -> Vec<u8> {
     soc_ifc.cptra_generic_output_wires().at(0).write(|_| 0xff);
     rv32_gen.into_inner().empty_loop().build()
 }
-
 
 // Atomic flag to indicate if SIGBUS was received
 static SIGBUS_RECEIVED: AtomicBool = AtomicBool::new(false);
@@ -82,12 +79,10 @@ fn main() {
         // Set the PAUSER to something invalid
         model.set_apb_pauser(0x2);
 
-
         // The accesses below trigger sigbus
         assert!(!model.soc_mbox().lock().read().lock());
         // Should continue to read 0 because the reads are being blocked by valid PAUSER
         assert!(!model.soc_mbox().lock().read().lock());
-               
 
         // Set the PAUSER back to valid
         model.set_apb_pauser(0x1);
@@ -100,7 +95,7 @@ fn main() {
         model.soc_mbox().cmd().write(|_| 4242);
 
         assert_eq!(model.soc_mbox().cmd().read(), 4242);
-      // Continue with the rest of your program
+        // Continue with the rest of your program
         println!("Continuing execution...");
     });
 
