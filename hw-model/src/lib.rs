@@ -1198,15 +1198,6 @@ mod tests {
     use caliptra_registers::{mbox::enums::MboxStatusE, soc_ifc};
     use zerocopy::{AsBytes, FromBytes};
 
-    #[cfg(feature = "fpga_realtime")]
-    use std::sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    };
-
-    #[cfg(feature = "fpga_realtime")]
-    use signal_hook::{consts::signal::SIGBUS, flag};
-
     use crate as caliptra_hw_model;
 
     const MBOX_ADDR_BASE: u32 = 0x3002_0000;
@@ -1349,16 +1340,8 @@ mod tests {
     // Currently only possible on verilator
     // SW emulator does not support pauser
     // For FPGA, test case needs to be reworked to capture SIGBUS from linux environment
-    #[cfg(any(feature = "verilator", feature = "fpga_realtime"))]
+    #[cfg(feature = "verilator")]
     fn test_mbox_pauser() {
-        #[cfg(feature = "fpga_realtime")]
-        let sigbus_received = Arc::new(AtomicBool::new(false));
-        #[cfg(feature = "fpga_realtime")]
-        let sigbus_received_clone = Arc::clone(&sigbus_received);
-        // Register the SIGBUS handler
-        #[cfg(feature = "fpga_realtime")]
-        flag::register(SIGBUS, sigbus_received_clone).expect("Failed to register SIGBUS handler");
-
         let mut model = caliptra_hw_model::new_unbooted(InitParams {
             rom: &gen_image_hi(),
             ..Default::default()
@@ -1386,13 +1369,6 @@ mod tests {
         assert!(!model.soc_mbox().lock().read().lock());
         // Should continue to read 0 because the reads are being blocked by valid PAUSER
         assert!(!model.soc_mbox().lock().read().lock());
-
-        // Check if SIGBUS was received
-        #[cfg(feature = "fpga_realtime")]
-        assert!(
-            sigbus_received.load(Ordering::Relaxed),
-            "SIGBUS was not raised"
-        );
 
         // Set the PAUSER back to valid
         model.set_apb_pauser(0x1);
