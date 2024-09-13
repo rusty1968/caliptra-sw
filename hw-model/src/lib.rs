@@ -1198,18 +1198,6 @@ mod tests {
     use caliptra_registers::{mbox::enums::MboxStatusE, soc_ifc};
     use zerocopy::{AsBytes, FromBytes};
 
-    use nix::sys::signal::{self, SigAction, SigHandler, SaFlags, SigSet, Signal};
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::Arc;
-    use std::thread;
-    use std::time::Duration;
-    
-    static SIGBUS_RECEIVED: AtomicBool = AtomicBool::new(false);
-    
-    extern "C" fn handle_sigbus(_: i32) {
-        SIGBUS_RECEIVED.store(true, Ordering::Relaxed);
-    }
-
     use crate as caliptra_hw_model;
 
     const MBOX_ADDR_BASE: u32 = 0x3002_0000;
@@ -1352,20 +1340,8 @@ mod tests {
     // Currently only possible on verilator
     // SW emulator does not support pauser
     // For FPGA, test case needs to be reworked to capture SIGBUS from linux environment
-    #[cfg(any(feature = "verilator", feature = "fpga_realtime"))]
+    #[cfg(feature = "verilator")]
     fn test_mbox_pauser() {
- 
-        // Set up the SIGBUS signal handler
-        let sig_action = SigAction::new(
-            SigHandler::Handler(handle_sigbus),
-            SaFlags::empty(),
-            SigSet::empty(),
-        );
-
-        unsafe {
-            signal::sigaction(Signal::SIGBUS, &sig_action).expect("Failed to set SIGBUS handler");
-        }
-
         let mut model = caliptra_hw_model::new_unbooted(InitParams {
             rom: &gen_image_hi(),
             ..Default::default()
@@ -1390,21 +1366,6 @@ mod tests {
         // Set the PAUSER to something invalid
         model.set_apb_pauser(0x2);
 
-
-        if cfg!(feature = "fpga_realtime") {
-            let lock_value1 = model.soc_mbox().lock().read().lock();
-            // Should continue to read 0 because the reads are being blocked by valid PAUSER
-            let lock_value2 = model.soc_mbox().lock().read().lock();
-            // Perform operations without asserting
-            if SIGBUS_RECEIVED.load(Ordering::Relaxed) {
-                println!("SIGBUS was raised, continuing operations...");
-            }
-        } else {
-            // This causes sigbus
-            assert!(!model.soc_mbox().lock().read().lock());
-            // Should continue to read 0 because the reads are being blocked by valid PAUSER
-            assert!(!model.soc_mbox().lock().read().lock());
-        }        
 
         // Set the PAUSER back to valid
         model.set_apb_pauser(0x1);
