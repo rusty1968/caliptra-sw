@@ -323,8 +323,6 @@ struct SendPtr(*mut u32);
 unsafe impl Send for SendPtr {}
 
 impl SocManager for ModelFpgaRealtime {
-    type TBus<'a> = FpgaRealtimeBus<'a>;
-
     const SOC_IFC_ADDR: u32 = 0x3003_0000;
     const SOC_IFC_TRNG_ADDR: u32 = 0x3003_0000;
     const SOC_SHA512_ACC_ADDR: u32 = 0x3002_1000;
@@ -332,17 +330,30 @@ impl SocManager for ModelFpgaRealtime {
 
     const MAX_WAIT_CYCLES: u32 = 20_000_000;
 
+    type TMmio<'a> = BusMmio<FpgaRealtimeBus<'a>>;
+
+    fn mmio_mut(&mut self) -> Self::TMmio<'_> {
+        BusMmio::new(self.apb_bus())
+    }
+
+    fn delay(&mut self) {
+        self.step();
+    }
+}
+impl HwModel for ModelFpgaRealtime {
+    type TBus<'a> = FpgaRealtimeBus<'a>;
+
     fn apb_bus(&mut self) -> Self::TBus<'_> {
         FpgaRealtimeBus {
             mmio: self.mmio,
             phantom: Default::default(),
         }
     }
+
     fn step(&mut self) {
         self.handle_log();
     }
-}
-impl HwModel for ModelFpgaRealtime {
+
     fn new_unbooted(params: crate::InitParams) -> Result<Self, Box<dyn std::error::Error>>
     where
         Self: Sized,

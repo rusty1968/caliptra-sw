@@ -1,6 +1,7 @@
 // Licensed under the Apache-2.0 license
 
 use caliptra_api::{self as api};
+use caliptra_emu_bus::Bus;
 
 use caliptra_hw_model_types::{
     ErrorInjectionMode, EtrngResponse, HexBytes, HexSlice, RandomEtrngResponses, RandomNibbles,
@@ -422,6 +423,18 @@ impl Display for ModelError {
 // from tests. Typically, test cases should use [`crate::new()`] to create a model
 // based on the cargo features (and any model-specific environment variables).
 pub trait HwModel: SocManager {
+    type TBus<'a>: Bus
+    where
+        Self: 'a;
+
+    /// The APB bus from the SoC to Caliptra
+    ///
+    /// WARNING: Reading or writing to this bus may involve the Caliptra
+    /// microcontroller executing a few instructions
+    fn apb_bus(&mut self) -> Self::TBus<'_>;
+
+    fn step(&mut self);
+
     /// Create a model. Most high-level tests should use [`new()`]
     /// instead.
     fn new_unbooted(params: InitParams) -> Result<Self, Box<dyn Error>>

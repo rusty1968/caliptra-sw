@@ -1085,7 +1085,7 @@ impl DerefMut for MboxBuffer {
 pub fn mbox_read_fifo(
     mbox: mbox::RegisterBlock<impl MmioMut>,
     buffer: &mut MboxBuffer,
-) -> core::result::Result<(), CaliptraApiError> {
+) -> core::result::Result<&MboxBuffer, CaliptraApiError> {
     let mut dlen = mbox.dlen().read();
     while dlen >= 4 {
         buffer
@@ -1101,7 +1101,7 @@ pub fn mbox_read_fifo(
             )
             .map_err(|_| CaliptraApiError::UnableToReadMailbox)?;
     }
-    Ok(())
+    Ok(buffer)
 }
 
 pub fn mbox_write_fifo(

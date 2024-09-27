@@ -8,8 +8,7 @@ mod checksum;
 pub mod mailbox;
 pub mod prelude;
 
-use caliptra_emu_types::bus::Bus;
-use caliptra_emu_types::mmio::BusMmio;
+use ureg::MmioMut;
 use zerocopy::{AsBytes, FromBytes};
 
 use caliptra_api_types::Fuses;
@@ -67,15 +66,11 @@ impl<'m, 'r, TSocManager: SocManager> MailboxRecvTxn<'m, 'r, TSocManager> {
             .write(|w| w.status(|_| status));
         // mbox_fsm_ps isn't updated immediately after execute is cleared (!?),
         // so step an extra clock cycle to wait for fm_ps to update
-        self.soc_mgr.step();
+        self.soc_mgr.delay();
     }
 }
 
 pub trait SocManager {
-    type TBus<'a>: Bus
-    where
-        Self: 'a;
-
     const SOC_IFC_ADDR: u32;
     const SOC_MBOX_ADDR: u32;
     const SOC_SHA512_ACC_ADDR: u32;
@@ -83,13 +78,13 @@ pub trait SocManager {
 
     const MAX_WAIT_CYCLES: u32;
 
-    /// The APB bus from the SoC to Caliptra
-    ///
-    /// WARNING: Reading or writing to this bus may involve the Caliptra
-    /// microcontroller executing a few instructions
-    fn apb_bus(&mut self) -> Self::TBus<'_>;
+    type TMmio<'a>: MmioMut
+    where
+        Self: 'a;
 
-    fn step(&mut self);
+    fn mmio_mut(&mut self) -> Self::TMmio<'_>;
+
+    fn delay(&mut self);
 
     /// Initializes the fuse values and locks them in until the next reset. This
     /// function can only be called during early boot, shortly after the model
@@ -155,48 +150,44 @@ pub trait SocManager {
 
     /// A register block that can be used to manipulate the soc_ifc peripheral
     /// over the simulated SoC->Caliptra APB bus.
-    fn soc_ifc(&mut self) -> caliptra_registers::soc_ifc::RegisterBlock<BusMmio<Self::TBus<'_>>> {
+    fn soc_ifc(&mut self) -> caliptra_registers::soc_ifc::RegisterBlock<Self::TMmio<'_>> {
         unsafe {
             caliptra_registers::soc_ifc::RegisterBlock::new_with_mmio(
                 Self::SOC_IFC_ADDR as *mut u32,
-                BusMmio::new(self.apb_bus()),
+                self.mmio_mut(),
             )
         }
     }
 
     /// A register block that can be used to manipulate the soc_ifc peripheral TRNG registers
     /// over the simulated SoC->Caliptra APB bus.
-    fn soc_ifc_trng(
-        &mut self,
-    ) -> caliptra_registers::soc_ifc_trng::RegisterBlock<BusMmio<Self::TBus<'_>>> {
+    fn soc_ifc_trng(&mut self) -> caliptra_registers::soc_ifc_trng::RegisterBlock<Self::TMmio<'_>> {
         unsafe {
             caliptra_registers::soc_ifc_trng::RegisterBlock::new_with_mmio(
                 Self::SOC_IFC_TRNG_ADDR as *mut u32,
-                BusMmio::new(self.apb_bus()),
+                self.mmio_mut(),
             )
         }
     }
 
     /// A register block that can be used to manipulate the mbox peripheral
     /// over the simulated SoC->Caliptra APB bus.
-    fn soc_mbox(&mut self) -> caliptra_registers::mbox::RegisterBlock<BusMmio<Self::TBus<'_>>> {
+    fn soc_mbox(&mut self) -> caliptra_registers::mbox::RegisterBlock<Self::TMmio<'_>> {
         unsafe {
             caliptra_registers::mbox::RegisterBlock::new_with_mmio(
                 Self::SOC_MBOX_ADDR as *mut u32,
-                BusMmio::new(self.apb_bus()),
+                self.mmio_mut(),
             )
         }
     }
 
     /// A register block that can be used to manipulate the sha512_acc peripheral
     /// over the simulated SoC->Caliptra APB bus.
-    fn soc_sha512_acc(
-        &mut self,
-    ) -> caliptra_registers::sha512_acc::RegisterBlock<BusMmio<Self::TBus<'_>>> {
+    fn soc_sha512_acc(&mut self) -> caliptra_registers::sha512_acc::RegisterBlock<Self::TMmio<'_>> {
         unsafe {
             caliptra_registers::sha512_acc::RegisterBlock::new_with_mmio(
                 Self::SOC_SHA512_ACC_ADDR as *mut u32,
-                BusMmio::new(self.apb_bus()),
+                self.mmio_mut(),
             )
         }
     }
@@ -209,7 +200,7 @@ pub trait SocManager {
         // Wait for the microcontroller to finish executing
         let mut timeout_cycles = 40000000; // 100ms @400MHz
         while self.soc_mbox().status().read().status().cmd_busy() {
-            self.step();
+            self.delay();
             timeout_cycles -= 1;
             if timeout_cycles == 0 {
                 return Err(CaliptraApiError::MailboxTimeout);
@@ -235,11 +226,11 @@ pub trait SocManager {
             return Err(CaliptraApiError::UnknownCommandStatus(status as u32));
         }
 
-        mbox_read_fifo(self.soc_mbox(), resp_data)?;
+        let res = mbox_read_fifo(self.soc_mbox(), resp_data);
 
         self.soc_mbox().execute().write(|w| w.execute(false));
 
-        Ok(Some(resp_data))
+        res.map(Some)
     }
 
     /// Send a command to the mailbox but don't wait for the response
@@ -376,7 +367,7 @@ pub trait SocManager {
             .mbox_fsm_ps()
             .mbox_execute_soc()
         {
-            self.step();
+            self.delay();
             return Err(CaliptraApiError::NoRequestsAvail);
         }
         let cmd = self.soc_mbox().cmd().read();
