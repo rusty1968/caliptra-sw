@@ -2,7 +2,9 @@
 
 use api::calc_checksum;
 use api::mailbox::{MailboxReqHeader, MailboxRespHeader, Response};
+use api::CaliptraApiError;
 use caliptra_api as api;
+use caliptra_api::SocManager;
 use caliptra_api_types as api_types;
 use caliptra_emu_bus::Bus;
 use std::mem;
@@ -42,6 +44,7 @@ mod model_fpga_realtime;
 mod output;
 mod rv32_builder;
 
+pub use api::mailbox::mbox_write_fifo;
 pub use api_types::{DeviceLifecycle, Fuses, SecurityState, U4};
 pub use caliptra_emu_bus::BusMmio;
 use output::ExitStatus;
@@ -301,6 +304,54 @@ pub enum ModelError {
     },
     MailboxRespInvalidFipsStatus(u32),
     MailboxTimeout,
+    NoRequestsAvail,
+    FuseDoneNotSet,
+    FusesAlreadyIniitalized,
+}
+
+impl From<CaliptraApiError> for ModelError {
+    fn from(error: CaliptraApiError) -> Self {
+        match error {
+            CaliptraApiError::UnableToLockMailbox => ModelError::UnableToLockMailbox,
+            CaliptraApiError::UnableToReadMailbox => ModelError::UnableToReadMailbox,
+            CaliptraApiError::NoRequestsAvail => ModelError::NoRequestsAvail,
+            CaliptraApiError::BufferTooLargeForMailbox => ModelError::BufferTooLargeForMailbox,
+            CaliptraApiError::UnknownCommandStatus(code) => ModelError::UnknownCommandStatus(code),
+            CaliptraApiError::MailboxTimeout => ModelError::MailboxTimeout,
+            CaliptraApiError::MailboxCmdFailed(code) => ModelError::MailboxCmdFailed(code),
+            CaliptraApiError::UnexpectedMailboxFsmStatus { expected, actual } => {
+                ModelError::UnexpectedMailboxFsmStatus { expected, actual }
+            }
+            CaliptraApiError::MailboxRespInvalidFipsStatus(status) => {
+                ModelError::MailboxRespInvalidFipsStatus(status)
+            }
+            CaliptraApiError::MailboxRespInvalidChecksum { expected, actual } => {
+                ModelError::MailboxRespInvalidChecksum { expected, actual }
+            }
+            CaliptraApiError::MailboxRespTypeTooSmall => ModelError::MailboxRespTypeTooSmall,
+            CaliptraApiError::MailboxReqTypeTooSmall => ModelError::MailboxReqTypeTooSmall,
+            CaliptraApiError::MailboxNoResponseData => ModelError::MailboxNoResponseData,
+            CaliptraApiError::MailboxUnexpectedResponseLen {
+                expected_min,
+                expected_max,
+                actual,
+            } => ModelError::MailboxUnexpectedResponseLen {
+                expected_min,
+                expected_max,
+                actual,
+            },
+            CaliptraApiError::UploadFirmwareUnexpectedResponse => {
+                ModelError::UploadFirmwareUnexpectedResponse
+            }
+            CaliptraApiError::UploadMeasurementResponseError => {
+                ModelError::UploadMeasurementResponseError
+            }
+            caliptra_api::CaliptraApiError::FusesAlreadyIniitalized => {
+                ModelError::FusesAlreadyIniitalized
+            }
+            caliptra_api::CaliptraApiError::FuseDoneNotSet => ModelError::FuseDoneNotSet,
+        }
+    }
 }
 impl Error for ModelError {}
 impl Display for ModelError {
@@ -366,6 +417,15 @@ impl Display for ModelError {
             ModelError::MailboxTimeout => {
                 write!(f, "Mailbox timed out in busy state")
             }
+            ModelError::NoRequestsAvail => {
+                write!(f, "No requests available in mailbox")
+            }
+            ModelError::FuseDoneNotSet => {
+                write!(f, "Fuse Done bit not set")
+            }
+            ModelError::FusesAlreadyIniitalized => {
+                write!(f, "Fuses already initialized")
+            }
         }
     }
 }
@@ -428,36 +488,6 @@ fn mbox_read_fifo(mbox: mbox::RegisterBlock<impl MmioMut>) -> Vec<u8> {
     result
 }
 
-pub fn mbox_write_fifo(
-    mbox: &mbox::RegisterBlock<impl MmioMut>,
-    buf: &[u8],
-) -> Result<(), ModelError> {
-    const MAILBOX_SIZE: u32 = 128 * 1024;
-
-    let Ok(input_len) = u32::try_from(buf.len()) else {
-        return Err(ModelError::BufferTooLargeForMailbox);
-    };
-    if input_len > MAILBOX_SIZE {
-        return Err(ModelError::BufferTooLargeForMailbox);
-    }
-    mbox.dlen().write(|_| input_len);
-
-    let mut remaining = buf;
-    while remaining.len() >= 4 {
-        // Panic is impossible because the subslice is always 4 bytes
-        let word = u32::from_le_bytes(remaining[..4].try_into().unwrap());
-        mbox.datain().write(|_| word);
-        remaining = &remaining[4..];
-    }
-    if !remaining.is_empty() {
-        let mut word_bytes = [0u8; 4];
-        word_bytes[..remaining.len()].copy_from_slice(remaining);
-        let word = u32::from_le_bytes(word_bytes);
-        mbox.datain().write(|_| word);
-    }
-    Ok(())
-}
-
 /// Firmware Load Command Opcode
 const FW_LOAD_CMD_OPCODE: u32 = 0x4657_4C44;
 
@@ -467,7 +497,7 @@ const STASH_MEASUREMENT_CMD_OPCODE: u32 = 0x4D45_4153;
 // Represents a emulator or simulation of the caliptra hardware, to be called
 // from tests. Typically, test cases should use [`crate::new()`] to create a model
 // based on the cargo features (and any model-specific environment variables).
-pub trait HwModel {
+pub trait HwModel: SocManager {
     type TBus<'a>: Bus
     where
         Self: 'a;
@@ -813,54 +843,6 @@ pub trait HwModel {
         }
     }
 
-    /// A register block that can be used to manipulate the soc_ifc peripheral
-    /// over the simulated SoC->Caliptra APB bus.
-    fn soc_ifc(&mut self) -> caliptra_registers::soc_ifc::RegisterBlock<BusMmio<Self::TBus<'_>>> {
-        unsafe {
-            caliptra_registers::soc_ifc::RegisterBlock::new_with_mmio(
-                0x3003_0000 as *mut u32,
-                BusMmio::new(self.apb_bus()),
-            )
-        }
-    }
-
-    /// A register block that can be used to manipulate the soc_ifc peripheral TRNG registers
-    /// over the simulated SoC->Caliptra APB bus.
-    fn soc_ifc_trng(
-        &mut self,
-    ) -> caliptra_registers::soc_ifc_trng::RegisterBlock<BusMmio<Self::TBus<'_>>> {
-        unsafe {
-            caliptra_registers::soc_ifc_trng::RegisterBlock::new_with_mmio(
-                0x3003_0000 as *mut u32,
-                BusMmio::new(self.apb_bus()),
-            )
-        }
-    }
-
-    /// A register block that can be used to manipulate the mbox peripheral
-    /// over the simulated SoC->Caliptra APB bus.
-    fn soc_mbox(&mut self) -> caliptra_registers::mbox::RegisterBlock<BusMmio<Self::TBus<'_>>> {
-        unsafe {
-            caliptra_registers::mbox::RegisterBlock::new_with_mmio(
-                0x3002_0000 as *mut u32,
-                BusMmio::new(self.apb_bus()),
-            )
-        }
-    }
-
-    /// A register block that can be used to manipulate the sha512_acc peripheral
-    /// over the simulated SoC->Caliptra APB bus.
-    fn soc_sha512_acc(
-        &mut self,
-    ) -> caliptra_registers::sha512_acc::RegisterBlock<BusMmio<Self::TBus<'_>>> {
-        unsafe {
-            caliptra_registers::sha512_acc::RegisterBlock::new_with_mmio(
-                0x3002_1000 as *mut u32,
-                BusMmio::new(self.apb_bus()),
-            )
-        }
-    }
-
     fn cover_fw_mage(&mut self, _image: &[u8]) {}
 
     fn tracing_hint(&mut self, enable: bool);
@@ -965,7 +947,7 @@ pub trait HwModel {
         .unwrap();
 
         self.soc_mbox().cmd().write(|_| cmd);
-        mbox_write_fifo(&self.soc_mbox(), buf)?;
+        mbox_write_fifo(&self.soc_mbox(), buf).map_err(ModelError::from)?;
 
         // Ask the microcontroller to execute this command
         self.soc_mbox().execute().write(|w| w.execute(true));
@@ -1165,6 +1147,7 @@ mod tests {
         mmio::Rv32GenMmio, BootParams, DefaultHwModel, HwModel, InitParams, ModelError, ShaAccMode,
     };
     use caliptra_api::mailbox::{self, CommandId, MailboxReqHeader, MailboxRespHeader};
+    use caliptra_api::soc_mgr::SocManager;
     use caliptra_builder::firmware;
     use caliptra_emu_bus::Bus;
     use caliptra_emu_types::RvSize;

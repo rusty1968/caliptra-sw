@@ -1,5 +1,6 @@
 // Licensed under the Apache-2.0 license
 
+use caliptra_api::SocManager;
 use std::io::{BufRead, BufReader, Write};
 use std::marker::PhantomData;
 use std::process::{Child, Command, Stdio};
@@ -321,6 +322,25 @@ impl ModelFpgaRealtime {
 // Hack to pass *mut u32 between threads
 struct SendPtr(*mut u32);
 unsafe impl Send for SendPtr {}
+
+impl SocManager for ModelFpgaRealtime {
+    const SOC_IFC_ADDR: u32 = 0x3003_0000;
+    const SOC_IFC_TRNG_ADDR: u32 = 0x3003_0000;
+    const SOC_SHA512_ACC_ADDR: u32 = 0x3002_1000;
+    const SOC_MBOX_ADDR: u32 = 0x3002_0000;
+
+    const MAX_WAIT_CYCLES: u32 = 20_000_000;
+
+    type TMmio<'a> = BusMmio<FpgaRealtimeBus<'a>>;
+
+    fn mmio_mut(&mut self) -> Self::TMmio<'_> {
+        BusMmio::new(self.apb_bus())
+    }
+
+    fn delay(&mut self) {
+        self.step();
+    }
+}
 
 impl HwModel for ModelFpgaRealtime {
     type TBus<'a> = FpgaRealtimeBus<'a>;

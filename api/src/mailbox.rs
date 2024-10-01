@@ -5,6 +5,13 @@ use caliptra_error::{CaliptraError, CaliptraResult};
 use core::mem::size_of;
 use zerocopy::{AsBytes, FromBytes, LayoutVerified};
 
+use crate::CaliptraApiError;
+use caliptra_registers::mbox;
+use ureg::MmioMut;
+
+use arrayvec::ArrayVec;
+use core::ops::{Deref, DerefMut};
+
 #[derive(PartialEq, Eq)]
 pub struct CommandId(pub u32);
 impl CommandId {
@@ -1046,6 +1053,64 @@ pub struct AuthorizeAndStashResp {
     pub auth_req_result: u32,
 }
 impl Response for AuthorizeAndStashResp {}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct MboxBuffer {
+    pub data: ArrayVec<u8, { Self::MAX_SIZE }>,
+}
+impl MboxBuffer {
+    const MAX_SIZE: usize = 4096;
+}
+
+impl PartialEq<[u8]> for MboxBuffer {
+    fn eq(&self, other: &[u8]) -> bool {
+        self.data.as_slice() == other
+    }
+}
+
+impl Deref for MboxBuffer {
+    type Target = ArrayVec<u8, { Self::MAX_SIZE }>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+
+impl DerefMut for MboxBuffer {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.data
+    }
+}
+
+pub fn mbox_write_fifo(
+    mbox: &mbox::RegisterBlock<impl MmioMut>,
+    buf: &[u8],
+) -> core::result::Result<(), CaliptraApiError> {
+    const MAILBOX_SIZE: u32 = 128 * 1024;
+
+    let Ok(input_len) = u32::try_from(buf.len()) else {
+        return Err(CaliptraApiError::BufferTooLargeForMailbox);
+    };
+    if input_len > MAILBOX_SIZE {
+        return Err(CaliptraApiError::BufferTooLargeForMailbox);
+    }
+    mbox.dlen().write(|_| input_len);
+
+    let mut remaining = buf;
+    while remaining.len() >= 4 {
+        // Panic is impossible because the subslice is always 4 bytes
+        let word = u32::from_le_bytes(remaining[..4].try_into().unwrap());
+        mbox.datain().write(|_| word);
+        remaining = &remaining[4..];
+    }
+    if !remaining.is_empty() {
+        let mut word_bytes = [0u8; 4];
+        word_bytes[..remaining.len()].copy_from_slice(remaining);
+        let word = u32::from_le_bytes(word_bytes);
+        mbox.datain().write(|_| word);
+    }
+    Ok(())
+}
 
 #[cfg(test)]
 mod tests {

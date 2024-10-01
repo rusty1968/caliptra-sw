@@ -1,6 +1,7 @@
 // Licensed under the Apache-2.0 license
-
 #[cfg(all(not(feature = "verilator"), not(feature = "fpga_realtime")))]
+use caliptra_api::SocManager;
+
 #[test]
 fn test_emu_coverage() {
     use std::path::PathBuf;

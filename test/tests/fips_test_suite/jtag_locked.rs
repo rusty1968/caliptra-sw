@@ -1,6 +1,7 @@
 // Licensed under the Apache-2.0 license
 
 use crate::common::fips_test_init_to_rom;
+use caliptra_api::SocManager;
 use caliptra_hw_model::OpenOcdError;
 use caliptra_hw_model::{InitParams, SecurityState};
 use caliptra_hw_model_types::DeviceLifecycle;
