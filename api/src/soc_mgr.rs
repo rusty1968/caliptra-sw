@@ -17,6 +17,20 @@ pub trait SocManager {
 
     fn delay(&mut self);
 
+    fn setup_mailbox_access(&mut self, apb_pausers: [u32; 5]) {
+        for (idx, apb_pauser) in apb_pausers.iter().enumerate() {
+            // Set up the PAUSER as valid for the mailbox (using index 0)
+            self.soc_ifc()
+                .cptra_mbox_valid_pauser()
+                .at(idx)
+                .write(|_| *apb_pauser);
+            self.soc_ifc()
+                .cptra_mbox_pauser_lock()
+                .at(idx)
+                .write(|w| w.lock(true));
+        }
+    }
+
     /// A register block that can be used to manipulate the soc_ifc peripheral
     /// over the simulated SoC->Caliptra APB bus.
     fn soc_ifc(&mut self) -> caliptra_registers::soc_ifc::RegisterBlock<Self::TMmio<'_>> {

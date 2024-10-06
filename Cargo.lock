@@ -2291,6 +2291,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "soc-mgr"
+version = "0.1.0"
+dependencies = [
+ "caliptra-api",
+ "caliptra-api-types",
+ "caliptra-builder",
+ "caliptra-emu-types",
+ "ureg",
+]
+
+[[package]]
 name = "spki"
 version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

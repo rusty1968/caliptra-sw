@@ -1,0 +1,38 @@
+# Licensed under the Apache-2.0 license
+
+[package]
+name = "soc-mgr"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+caliptra-api.workspace = true
+caliptra-emu-types.workspace = true
+caliptra-api-types.workspace = true
+ureg.workspace = true
+
+[build-dependencies]
+caliptra-builder.workspace = true
+
+[dev-dependencies]
+caliptra-builder.workspace = true
+
+[features]
+default = ["std"]
+std=[]
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+
+[profile.firmware]
+inherits = "dev"
+panic = "abort"
+lto = true
+opt-level = 0
+codegen-units = 1
+debug = 2

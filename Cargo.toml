@@ -26,6 +26,7 @@ exclude = [
 
 members = [
   "api",
+  "api/soc_mgr",
   "api/types",
   "auth-manifest/app",
   "auth-manifest/gen",
