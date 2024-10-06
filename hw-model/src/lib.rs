@@ -310,11 +310,44 @@ pub enum ModelError {
 impl From<CaliptraApiError> for ModelError {
     fn from(error: CaliptraApiError) -> Self {
         match error {
+            CaliptraApiError::UnableToLockMailbox => ModelError::UnableToLockMailbox,
+            CaliptraApiError::UnableToReadMailbox => ModelError::UnableToReadMailbox,
             CaliptraApiError::BufferTooLargeForMailbox => ModelError::BufferTooLargeForMailbox,
+            CaliptraApiError::UnknownCommandStatus(code) => ModelError::UnknownCommandStatus(code),
+            CaliptraApiError::MailboxTimeout => ModelError::MailboxTimeout,
+            CaliptraApiError::MailboxCmdFailed(code) => ModelError::MailboxCmdFailed(code),
+            CaliptraApiError::UnexpectedMailboxFsmStatus { expected, actual } => {
+                ModelError::UnexpectedMailboxFsmStatus { expected, actual }
+            }
+            CaliptraApiError::MailboxRespInvalidFipsStatus(status) => {
+                ModelError::MailboxRespInvalidFipsStatus(status)
+            }
+            CaliptraApiError::MailboxRespInvalidChecksum { expected, actual } => {
+                ModelError::MailboxRespInvalidChecksum { expected, actual }
+            }
+            CaliptraApiError::MailboxRespTypeTooSmall => ModelError::MailboxRespTypeTooSmall,
+            CaliptraApiError::MailboxReqTypeTooSmall => ModelError::MailboxReqTypeTooSmall,
+            CaliptraApiError::MailboxNoResponseData => ModelError::MailboxNoResponseData,
+            CaliptraApiError::MailboxUnexpectedResponseLen {
+                expected_min,
+                expected_max,
+                actual,
+            } => ModelError::MailboxUnexpectedResponseLen {
+                expected_min,
+                expected_max,
+                actual,
+            },
+            CaliptraApiError::UploadFirmwareUnexpectedResponse => {
+                ModelError::UploadFirmwareUnexpectedResponse
+            }
+            CaliptraApiError::UploadMeasurementResponseError => {
+                ModelError::UploadMeasurementResponseError
+            }
             caliptra_api::CaliptraApiError::ReadBuffTooSmall => ModelError::ReadBufferTooSmall,
         }
     }
 }
+
 impl Error for ModelError {}
 impl Display for ModelError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -439,9 +472,6 @@ fn mbox_read_fifo(mbox: mbox::RegisterBlock<impl MmioMut>) -> Vec<u8> {
 
     buf
 }
-
-/// Firmware Load Command Opcode
-const FW_LOAD_CMD_OPCODE: u32 = 0x4657_4C44;
 
 /// Stash Measurement Command Opcode.
 const STASH_MEASUREMENT_CMD_OPCODE: u32 = 0x4D45_4153;
@@ -880,17 +910,6 @@ pub trait HwModel: SocManager {
         cmd: u32,
         buf: &[u8],
     ) -> std::result::Result<(), ModelError> {
-        // Read a 0 to get the lock
-        if self.soc_mbox().lock().read().lock() {
-            return Err(ModelError::UnableToLockMailbox);
-        }
-
-        // Mailbox lock value should read 1 now
-        // If not, the reads are likely being blocked by the PAUSER check or some other issue
-        if !(self.soc_mbox().lock().read().lock()) {
-            return Err(ModelError::UnableToReadMailbox);
-        }
-
         writeln!(
             self.output().logger(),
             "<<< Executing mbox cmd 0x{cmd:08x} ({} bytes) from SoC",
@@ -898,13 +917,7 @@ pub trait HwModel: SocManager {
         )
         .unwrap();
 
-        self.soc_mbox().cmd().write(|_| cmd);
-        mbox_write_fifo(&self.soc_mbox(), buf).map_err(ModelError::from)?;
-
-        // Ask the microcontroller to execute this command
-        self.soc_mbox().execute().write(|w| w.execute(true));
-
-        Ok(())
+        SocManager::start_mailbox_exec(self, cmd, buf).map_err(ModelError::from)
     }
 
     /// Wait for the response to a previous call to `start_mailbox_execute()`.
@@ -1024,11 +1037,7 @@ pub trait HwModel: SocManager {
 
     /// Upload firmware to the mailbox.
     fn upload_firmware(&mut self, firmware: &[u8]) -> Result<(), ModelError> {
-        let response = self.mailbox_execute(FW_LOAD_CMD_OPCODE, firmware)?;
-        if response.is_some() {
-            return Err(ModelError::UploadFirmwareUnexpectedResponse);
-        }
-        Ok(())
+        SocManager::upload_fw(self, firmware).map_err(ModelError::from)
     }
 
     fn wait_for_mailbox_receive(&mut self) -> Result<MailboxRecvTxn<Self>, ModelError>
