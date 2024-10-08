@@ -1,8 +1,11 @@
 // Licensed under the Apache-2.0 license
 use crate::mailbox::mbox_read_fifo;
 use crate::mailbox::mbox_write_fifo;
+use crate::mailbox::CommandId;
+use crate::mailbox::StashMeasurementResp;
 use crate::CaliptraApiError;
 use ureg::MmioMut;
+use zerocopy::{AsBytes, FromBytes};
 
 pub trait SocManager {
     const SOC_IFC_ADDR: u32;
@@ -19,6 +22,63 @@ pub trait SocManager {
     fn mmio_mut(&mut self) -> Self::TMmio<'_>;
 
     fn delay(&mut self);
+
+    /// Get 'ready for firmware' status
+    ///
+    /// # Arguments
+    ///
+    /// * None
+    fn flow_status_ready_for_firmware(&mut self) -> bool {
+        self.soc_ifc().cptra_flow_status().read().ready_for_fw()
+    }
+
+    fn flow_status_fuses_wr_done(&mut self) -> bool {
+        self.soc_ifc().cptra_fuse_wr_done().read().done()
+    }
+
+    fn wait_for_fuses_done(&mut self, num_delay_cycles: u32) -> bool {
+        let mut timeout_cycles = num_delay_cycles;
+        while !self.flow_status_fuses_wr_done() {
+            self.delay();
+            timeout_cycles -= 1;
+            if timeout_cycles == 0 {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Upload measurement to the mailbox.
+    fn upload_meas(&mut self, measurement: &[u8]) -> Result<(), CaliptraApiError> {
+        let mut response_buffer = [0u8; core::mem::size_of::<StashMeasurementResp>()];
+        let response = self.mailbox_exec(
+            CommandId::STASH_MEASUREMENT.into(),
+            measurement,
+            &mut response_buffer,
+        )?;
+
+        // We expect a response
+        let response = response.ok_or(CaliptraApiError::UploadMeasurementResponseError)?;
+
+        // Get response as a response header struct
+        let response = StashMeasurementResp::read_from(response)
+            .ok_or(CaliptraApiError::UploadMeasurementResponseError)?;
+
+        // Verify checksum and FIPS status
+        if !crate::verify_checksum(
+            response.hdr.chksum,
+            0x0,
+            &response.as_bytes()[core::mem::size_of_val(&response.hdr.chksum)..],
+        ) {
+            return Err(CaliptraApiError::UploadMeasurementResponseError);
+        }
+
+        if response.hdr.fips_status != crate::mailbox::MailboxRespHeader::FIPS_STATUS_APPROVED {
+            return Err(CaliptraApiError::UploadMeasurementResponseError);
+        }
+
+        Ok(())
+    }
 
     /// Send a command to the mailbox but don't wait for the response
     fn start_mailbox_exec(
