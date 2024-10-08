@@ -15,4 +15,6 @@ pub use soc_mgr::SocManager;
 pub enum CaliptraApiError {
     ReadBuffTooSmall,
     BufferTooLargeForMailbox,
+    FuseDoneNotSet,
+    FusesAlreadyIniitalized,
 }

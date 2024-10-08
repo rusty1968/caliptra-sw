@@ -7,6 +7,7 @@ use caliptra_api as api;
 use caliptra_api::SocManager;
 use caliptra_api_types as api_types;
 use caliptra_emu_bus::Bus;
+use core::panic;
 use std::mem;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -305,6 +306,8 @@ pub enum ModelError {
     MailboxRespInvalidFipsStatus(u32),
     MailboxTimeout,
     ReadBufferTooSmall,
+    FuseDoneNotSet,
+    FusesAlreadyIniitalized,
 }
 
 impl From<CaliptraApiError> for ModelError {
@@ -312,6 +315,10 @@ impl From<CaliptraApiError> for ModelError {
         match error {
             CaliptraApiError::BufferTooLargeForMailbox => ModelError::BufferTooLargeForMailbox,
             caliptra_api::CaliptraApiError::ReadBuffTooSmall => ModelError::ReadBufferTooSmall,
+            caliptra_api::CaliptraApiError::FuseDoneNotSet => ModelError::FuseDoneNotSet,
+            caliptra_api::CaliptraApiError::FusesAlreadyIniitalized => {
+                ModelError::FusesAlreadyIniitalized
+            }
         }
     }
 }
@@ -382,6 +389,14 @@ impl Display for ModelError {
 
             ModelError::ReadBufferTooSmall => {
                 write!(f, "Cant read mailbox because read buffer too small")
+            }
+
+            ModelError::FuseDoneNotSet => {
+                write!(f, "Fuse Wr Done bit not set")
+            }
+
+            ModelError::FusesAlreadyIniitalized => {
+                write!(f, "Fuses already initialized")
             }
         }
     }
@@ -486,7 +501,7 @@ pub trait HwModel: SocManager {
     where
         Self: Sized,
     {
-        self.init_fuses(&boot_params.fuses);
+        HwModel::init_fuses(self, &boot_params.fuses);
 
         self.soc_ifc()
             .cptra_dbg_manuf_service_reg()
@@ -515,14 +530,7 @@ pub trait HwModel: SocManager {
         }
 
         // Set up the PAUSER as valid for the mailbox (using index 0)
-        self.soc_ifc()
-            .cptra_mbox_valid_pauser()
-            .at(0)
-            .write(|_| boot_params.valid_pauser);
-        self.soc_ifc()
-            .cptra_mbox_pauser_lock()
-            .at(0)
-            .write(|w| w.lock(true));
+        self.setup_mailbox_users(&[boot_params.valid_pauser]);
 
         writeln!(self.output().logger(), "writing to cptra_bootfsm_go")?;
         self.soc_ifc().cptra_bootfsm_go().write(|w| w.go(true));
@@ -557,7 +565,7 @@ pub trait HwModel: SocManager {
     fn warm_reset_flow(&mut self, fuses: &Fuses) {
         self.warm_reset();
 
-        self.init_fuses(fuses);
+        HwModel::init_fuses(self, fuses);
         self.soc_ifc().cptra_bootfsm_go().write(|w| w.go(true));
     }
 
@@ -606,55 +614,13 @@ pub trait HwModel: SocManager {
     /// If the cptra_fuse_wr_done has already been written, or the
     /// hardware prevents cptra_fuse_wr_done from being set.
     fn init_fuses(&mut self, fuses: &Fuses) {
-        if !self.soc_ifc().cptra_reset_reason().read().warm_reset() {
-            assert!(
-                !self.soc_ifc().cptra_fuse_wr_done().read().done(),
-                "Fuses are already locked in place (according to cptra_fuse_wr_done)"
+        println!("Initializing fuses");
+        if let Err(e) = caliptra_api::SocManager::init_fuses(self, fuses) {
+            panic!(
+                "{}",
+                format!("Fuse initializaton error: {}", ModelError::from(e))
             );
         }
-        println!("Initializing fuses: {:#x?}", fuses);
-
-        self.soc_ifc().fuse_uds_seed().write(&fuses.uds_seed);
-        self.soc_ifc()
-            .fuse_field_entropy()
-            .write(&fuses.field_entropy);
-        self.soc_ifc()
-            .fuse_key_manifest_pk_hash()
-            .write(&fuses.key_manifest_pk_hash);
-        self.soc_ifc()
-            .fuse_key_manifest_pk_hash_mask()
-            .write(|w| w.mask(fuses.key_manifest_pk_hash_mask.into()));
-        self.soc_ifc()
-            .fuse_owner_pk_hash()
-            .write(&fuses.owner_pk_hash);
-        self.soc_ifc()
-            .fuse_fmc_key_manifest_svn()
-            .write(|_| fuses.fmc_key_manifest_svn);
-        self.soc_ifc().fuse_runtime_svn().write(&fuses.runtime_svn);
-        self.soc_ifc()
-            .fuse_anti_rollback_disable()
-            .write(|w| w.dis(fuses.anti_rollback_disable));
-        self.soc_ifc()
-            .fuse_idevid_cert_attr()
-            .write(&fuses.idevid_cert_attr);
-        self.soc_ifc()
-            .fuse_idevid_manuf_hsm_id()
-            .write(&fuses.idevid_manuf_hsm_id);
-        self.soc_ifc()
-            .fuse_life_cycle()
-            .write(|w| w.life_cycle(fuses.life_cycle.into()));
-        self.soc_ifc()
-            .fuse_lms_verify()
-            .write(|w| w.lms_verify(fuses.lms_verify));
-        self.soc_ifc()
-            .fuse_lms_revocation()
-            .write(|_| fuses.fuse_lms_revocation);
-        self.soc_ifc()
-            .fuse_soc_stepping_id()
-            .write(|w| w.soc_stepping_id(fuses.soc_stepping_id.into()));
-
-        self.soc_ifc().cptra_fuse_wr_done().write(|w| w.done(true));
-        assert!(self.soc_ifc().cptra_fuse_wr_done().read().done());
     }
 
     fn step_until_exit_success(&mut self) -> std::io::Result<()> {
