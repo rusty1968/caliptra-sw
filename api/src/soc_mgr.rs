@@ -3,10 +3,10 @@
 use crate::{
     calc_checksum,
     mailbox::{
-        mbox_read_response, mbox_write_fifo, MailboxReqHeader, MailboxRespHeader, Request,
-        Response, ResponsePacket, StashMeasurementReq,
+        mbox_read_response, mbox_write_fifo, MailboxReqHeader, MailboxRespHeader, MboxBuffer,
+        Request, Response, StashMeasurementReq,
     },
-    CaliptraApiError,
+    CaliptraApiError, MailboxRecvTxn, MboxRequest,
 };
 use caliptra_api_types::Fuses;
 use core::mem;
@@ -202,7 +202,7 @@ pub trait SocManager {
         &mut self,
         cmd: u32,
         buf: &[u8],
-        resp_data: &'r mut ResponsePacket,
+        resp_data: &'r mut MboxBuffer,
     ) -> core::result::Result<Option<&'r [u8]>, CaliptraApiError> {
         self.start_mailbox_exec(cmd, buf)?;
         self.finish_mailbox_exec(resp_data)
@@ -236,7 +236,7 @@ pub trait SocManager {
 
     fn finish_mailbox_exec<'r>(
         &mut self,
-        resp_data: &'r mut ResponsePacket,
+        resp_data: &'r mut MboxBuffer,
     ) -> core::result::Result<Option<&'r [u8]>, CaliptraApiError> {
         // Wait for the microcontroller to finish executing
         let mut timeout_cycles = Self::MAX_WAIT_CYCLES; // 100ms @400MHz
@@ -282,7 +282,7 @@ pub trait SocManager {
     fn mailbox_exec_req<R: Request>(
         &mut self,
         mut req: R,
-        packet: &mut ResponsePacket,
+        packet: &mut MboxBuffer,
     ) -> core::result::Result<R::Resp, CaliptraApiError> {
         if mem::size_of::<R>() < mem::size_of::<MailboxReqHeader>() {
             return Err(CaliptraApiError::MailboxReqTypeTooSmall);
@@ -335,12 +335,38 @@ pub trait SocManager {
     fn send_stash_measurement_req(
         &mut self,
         req: StashMeasurementReq,
-        response_packet: &mut ResponsePacket,
+        response_packet: &mut MboxBuffer,
     ) -> Result<(), CaliptraApiError> {
         let resp = self.mailbox_exec_req(req, response_packet)?;
         if resp.dpe_result == 0 {
             return Ok(());
         }
         Err(CaliptraApiError::StashMeasurementFailed)
+    }
+
+    fn try_mbox_receive<'m, 'r>(
+        &'m mut self,
+        mut data: MboxBuffer<'r>,
+    ) -> Result<Option<MailboxRecvTxn<'m, 'r, Self>>, CaliptraApiError>
+    where
+        Self: Sized,
+        Self: 'm,
+    {
+        if !self
+            .soc_mbox()
+            .status()
+            .read()
+            .mbox_fsm_ps()
+            .mbox_execute_soc()
+        {
+            self.delay();
+            return Ok(None);
+        }
+        let cmd = self.soc_mbox().cmd().read();
+        mbox_read_response(self.soc_mbox(), &mut data)?;
+        Ok(Some(MailboxRecvTxn {
+            mgr: self,
+            req: MboxRequest { cmd, data },
+        }))
     }
 }

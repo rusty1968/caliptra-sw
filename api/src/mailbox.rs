@@ -1051,24 +1051,29 @@ pub struct AuthorizeAndStashResp {
 }
 impl Response for AuthorizeAndStashResp {}
 
-pub struct ResponsePacket<'a> {
+pub struct MboxBuffer<'a> {
     pub buffer: &'a mut [u8],
     pub len: usize, // Length in bytes
 }
 
-impl<'a> ResponsePacket<'a> {
+impl<'a> MboxBuffer<'a> {
     pub fn new(buffer: &'a mut [u8]) -> Self {
-        ResponsePacket { buffer, len: 0 }
+        MboxBuffer { buffer, len: 0 }
     }
     pub fn reset(&mut self) {
         self.len = 0;
     }
 }
 
+pub struct MboxRequest<'a> {
+    pub cmd: u32,
+    pub data: MboxBuffer<'a>,
+}
+
 /// Retrievesa ResponsePacket from the mailbox.
 pub fn mbox_read_response(
     mbox: mbox::RegisterBlock<impl MmioMut>,
-    packet: &mut ResponsePacket,
+    packet: &mut MboxBuffer,
 ) -> Result<(), CaliptraApiError> {
     let dlen_bytes = mbox.dlen().read() as usize;
 

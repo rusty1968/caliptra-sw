@@ -452,6 +452,7 @@ pub struct MailboxRecvTxn<'a, TModel: HwModel> {
     model: &'a mut TModel,
     pub req: MailboxRequest,
 }
+
 impl<'a, Model: HwModel> MailboxRecvTxn<'a, Model> {
     pub fn respond_success(self) {
         self.complete(MboxStatusE::CmdComplete);
@@ -916,47 +917,45 @@ pub trait HwModel: SocManager {
 
     /// Wait for the response to a previous call to `start_mailbox_execute()`.
     fn finish_mailbox_execute(&mut self) -> std::result::Result<Option<Vec<u8>>, ModelError> {
-        // Wait for the microcontroller to finish executing
-        let mut timeout_cycles = 40000000; // 100ms @400MHz
-        while self.soc_mbox().status().read().status().cmd_busy() {
-            self.step();
-            timeout_cycles -= 1;
-            if timeout_cycles == 0 {
-                return Err(ModelError::MailboxTimeout);
-            }
-        }
-        let status = self.soc_mbox().status().read().status();
-        if status.cmd_failure() {
-            writeln!(self.output().logger(), ">>> mbox cmd response: failed").unwrap();
-            self.soc_mbox().execute().write(|w| w.execute(false));
-            let soc_ifc = self.soc_ifc();
-            return Err(ModelError::MailboxCmdFailed(
-                if soc_ifc.cptra_fw_error_fatal().read() != 0 {
-                    soc_ifc.cptra_fw_error_fatal().read()
-                } else {
-                    soc_ifc.cptra_fw_error_non_fatal().read()
-                },
-            ));
-        }
-        if status.cmd_complete() {
-            writeln!(self.output().logger(), ">>> mbox cmd response: success").unwrap();
-            self.soc_mbox().execute().write(|w| w.execute(false));
-            return Ok(None);
-        }
-        if !status.data_ready() {
-            return Err(ModelError::UnknownCommandStatus(status as u32));
-        }
+        use crate::api::mailbox::MboxBuffer;
+        const MAX_PAYLOAD_SIZE: usize = 8192;
+        let mut buffer = vec![0; MAX_PAYLOAD_SIZE];
+        buffer.resize(MAX_PAYLOAD_SIZE, 0);
 
-        let dlen = self.soc_mbox().dlen().read();
-        writeln!(
-            self.output().logger(),
-            ">>> mbox cmd response data ({dlen} bytes)"
-        )
-        .unwrap();
-        let result = mbox_read_fifo(self.soc_mbox());
+        let mut resp_data = MboxBuffer {
+            buffer: buffer.as_bytes_mut(),
+            len: 0,
+        };
+        let result =
+            match SocManager::finish_mailbox_exec(self, &mut resp_data).map_err(ModelError::from) {
+                Ok(Some(resp)) => {
+                    writeln!(self.output().logger(), ">>> mbox cmd response: success").unwrap();
+                    Ok(Some(resp))
+                }
+                Ok(None) => {
+                    writeln!(
+                        self.output().logger(),
+                        ">>> mbox cmd response: success, no data"
+                    )
+                    .unwrap();
+                    Ok(None)
+                }
+                Err(ModelError::MailboxCmdFailed(code)) => {
+                    writeln!(
+                        self.output().logger(),
+                        ">>> mbox cmd response: failed, code={}",
+                        code
+                    )
+                    .unwrap();
+                    Err(ModelError::MailboxCmdFailed(code))
+                }
+                Err(e) => {
+                    writeln!(self.output().logger(), ">>> mbox cmd response: failed").unwrap();
+                    Err(e)
+                }
+            };
 
-        self.soc_mbox().execute().write(|w| w.execute(false));
-
+        let opt = result.map(|opt| opt.map(|slice| slice.to_vec()))?;
         if cfg!(not(feature = "fpga_realtime")) {
             // Don't check for mbox_idle() unless the hw-model supports
             // fine-grained timing control; the firmware may proceed to lock the
@@ -968,7 +967,7 @@ pub trait HwModel: SocManager {
             self.step();
             assert!(self.soc_mbox().status().read().mbox_fsm_ps().mbox_idle());
         }
-        Ok(Some(result))
+        Ok(opt)
     }
 
     /// Streams `data` to the sha512acc SoC interface. If `sha384` computes
@@ -1105,9 +1104,7 @@ mod tests {
     use crate::{
         mmio::Rv32GenMmio, BootParams, DefaultHwModel, HwModel, InitParams, ModelError, ShaAccMode,
     };
-    use caliptra_api::mailbox::{
-        self, CommandId, MailboxReqHeader, MailboxRespHeader, ResponsePacket,
-    };
+    use caliptra_api::mailbox::{self, CommandId, MailboxReqHeader, MailboxRespHeader, MboxBuffer};
     use caliptra_api::soc_mgr::SocManager;
     use caliptra_builder::firmware;
     use caliptra_emu_bus::Bus;
@@ -1416,7 +1413,7 @@ mod tests {
         .unwrap();
 
         // Send command that echoes the command and input message
-        let mut resp_data = caliptra_api::mailbox::ResponsePacket {
+        let mut resp_data = caliptra_api::mailbox::MboxBuffer {
             buffer: &mut [0u8; 128],
             len: 0,
         };
@@ -1431,7 +1428,7 @@ mod tests {
         );
 
         // Send command that echoes the command and input message
-        let mut resp_data = caliptra_api::mailbox::ResponsePacket {
+        let mut resp_data = caliptra_api::mailbox::MboxBuffer {
             buffer: &mut [0u8; 128],
             len: 0,
         };
@@ -1444,7 +1441,7 @@ mod tests {
 
         // Send command that returns 7 bytes of output, and doesn't consume input
         // Send command that echoes the command and input message
-        let mut resp_data = caliptra_api::mailbox::ResponsePacket {
+        let mut resp_data = caliptra_api::mailbox::MboxBuffer {
             buffer: &mut [0u8; 128],
             len: 0,
         };
@@ -1455,7 +1452,7 @@ mod tests {
         );
 
         // Send command that echoes the command and input message
-        let mut resp_data = caliptra_api::mailbox::ResponsePacket {
+        let mut resp_data = caliptra_api::mailbox::MboxBuffer {
             buffer: &mut [],
             len: 0,
         };
@@ -1662,7 +1659,7 @@ mod tests {
         );
 
         let mut buffer = [0u8; 256];
-        let mut packet = ResponsePacket {
+        let mut packet = MboxBuffer {
             buffer: &mut buffer,
             len: 0,
         };
@@ -1696,7 +1693,7 @@ mod tests {
                 0x2d, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, b'H', b'I', b'!',
             ],
         );
-        let mut packet = ResponsePacket {
+        let mut packet = MboxBuffer {
             buffer: &mut buffer,
             len: 0,
         };
@@ -1725,7 +1722,7 @@ mod tests {
                 0x2e, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, b'H', b'I', b'!', b'!',
             ],
         );
-        let mut packet = ResponsePacket {
+        let mut packet = MboxBuffer {
             buffer: &mut buffer,
             len: 0,
         };
@@ -1753,7 +1750,7 @@ mod tests {
                 0x0c, 0xff, 0xff, 0xff, 0x01, 0x20, 0x00, 0x00, b'H', b'I', b'!', b'!',
             ],
         );
-        let mut packet = ResponsePacket {
+        let mut packet = MboxBuffer {
             buffer: &mut [0u8; 12],
             len: 0,
         };
