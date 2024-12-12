@@ -54,6 +54,9 @@ impl CommandId {
 
     // The get IDevID CSR command.
     pub const GET_IDEV_CSR: Self = Self(0x4944_4352); // "IDCR"
+
+    // The get FMC Alias CSR command.
+    pub const GET_FMC_ALIAS_CSR: Self = Self(0x464D_4352); // "FMCR"
 }
 
 impl From<u32> for CommandId {
@@ -155,6 +158,7 @@ pub enum MailboxResp {
     CertifyKeyExtended(CertifyKeyExtendedResp),
     AuthorizeAndStash(AuthorizeAndStashResp),
     GetIdevCsr(GetIdevCsrResp),
+    GetFmcAliasCsr(GetFmcAliasCsrResp),
 }
 
 impl MailboxResp {
@@ -176,6 +180,7 @@ impl MailboxResp {
             MailboxResp::CertifyKeyExtended(resp) => Ok(resp.as_bytes()),
             MailboxResp::AuthorizeAndStash(resp) => Ok(resp.as_bytes()),
             MailboxResp::GetIdevCsr(resp) => Ok(resp.as_bytes()),
+            MailboxResp::GetFmcAliasCsr(resp) => Ok(resp.as_bytes()),
         }
     }
 
@@ -197,6 +202,7 @@ impl MailboxResp {
             MailboxResp::CertifyKeyExtended(resp) => Ok(resp.as_bytes_mut()),
             MailboxResp::AuthorizeAndStash(resp) => Ok(resp.as_bytes_mut()),
             MailboxResp::GetIdevCsr(resp) => Ok(resp.as_bytes_mut()),
+            MailboxResp::GetFmcAliasCsr(resp) => Ok(resp.as_bytes_mut()),
         }
     }
 
@@ -1016,6 +1022,30 @@ impl Default for GetIdevCsrResp {
         }
     }
 }
+
+// GET_IDEVID_CSR
+#[repr(C)]
+#[derive(Default, Debug, AsBytes, FromBytes, PartialEq, Eq)]
+pub struct GetFmcAliasCsrReq {
+    pub hdr: MailboxReqHeader,
+}
+
+impl Request for GetFmcAliasCsrReq {
+    const ID: CommandId = CommandId::GET_FMC_ALIAS_CSR;
+    type Resp = GetIdevCsrResp;
+}
+
+#[repr(C)]
+#[derive(Debug, AsBytes, FromBytes, PartialEq, Eq)]
+pub struct GetFmcAliasCsrResp {
+    pub hdr: MailboxRespHeader,
+    pub data_size: u32,
+    pub data: [u8; Self::DATA_MAX_SIZE],
+}
+impl GetFmcAliasCsrResp {
+    pub const DATA_MAX_SIZE: usize = 512;
+}
+impl ResponseVarSize for GetFmcAliasCsrResp {}
 
 #[repr(u32)]
 #[derive(Debug, PartialEq, Eq)]

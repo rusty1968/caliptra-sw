@@ -175,11 +175,7 @@ fn handle_command(drivers: &mut Drivers) -> CaliptraResult<MboxStatusE> {
     let req_packet = Packet::copy_from_mbox(drivers)?;
     let cmd_bytes = req_packet.as_bytes()?;
 
-    cprintln!(
-        "[rt] Received command=0x{:x}, len={}",
-        req_packet.cmd,
-        req_packet.len
-    );
+    cprintln!("[rt]cmd =0x{:x}, len={}", req_packet.cmd, req_packet.len);
 
     // Handle the request and generate the response
     let mut resp = match CommandId::from(req_packet.cmd) {
@@ -271,7 +267,7 @@ pub fn handle_mailbox_commands(drivers: &mut Drivers) -> CaliptraResult<()> {
             }
             match result {
                 Ok(_) => {
-                    cprintln!("Disabled attestation due to cmd busy during warm reset");
+                    cprintln!("Disabled attest - cmd busy + warm rst");
                     caliptra_drivers::report_fw_error_non_fatal(
                         CaliptraError::RUNTIME_CMD_BUSY_DURING_WARM_RESET.into(),
                     );

@@ -14,6 +14,7 @@ Abstract:
 
 mod crypto;
 pub mod dice;
+mod fmc_alias_csr;
 mod pcr;
 mod rt_alias;
 mod tci;
@@ -30,5 +31,8 @@ use caliptra_drivers::CaliptraResult;
 ///
 /// * `env` - FMC Environment
 pub fn run(env: &mut FmcEnv) -> CaliptraResult<()> {
+    // Generate the Initial DevID Certificate Signing Request (CSR)
+    fmc_alias_csr::generate_csr(env)?;
+
     RtAliasLayer::run(env)
 }

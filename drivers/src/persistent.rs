@@ -52,6 +52,70 @@ pub struct IdevIdCsr {
     csr: [u8; MAX_CSR_SIZE],
 }
 
+#[cfg(feature = "fmc")]
+pub mod fmc_alias_csr {
+    use super::*;
+
+    const _: () = assert!(size_of::<FmcAliasCsr>() < memory_layout::FMC_ALIAS_CSR_SIZE as usize);
+
+    #[derive(Clone, FromBytes, AsBytes, Zeroize)]
+    #[repr(C)]
+    pub struct FmcAliasCsr {
+        csr_len: u32,
+        csr: [u8; MAX_CSR_SIZE],
+    }
+
+    impl Default for FmcAliasCsr {
+        fn default() -> Self {
+            Self {
+                csr_len: Self::UNPROVISIONED_CSR,
+                csr: [0; MAX_CSR_SIZE],
+            }
+        }
+    }
+
+    impl FmcAliasCsr {
+        /// The `csr_len` field is set to this constant when a ROM image supports CSR generation but
+        /// the CSR generation flag was not enabled.
+        ///
+        /// This is used by the runtime to distinguish ROM images that support CSR generation from
+        /// ones that do not.
+        ///
+        /// u32::MAX is too large to be a valid CSR, so we use it to encode this state.
+        pub const UNPROVISIONED_CSR: u32 = u32::MAX;
+
+        /// Get the CSR buffer
+        pub fn get(&self) -> Option<&[u8]> {
+            self.csr.get(..self.csr_len as usize)
+        }
+
+        /// Create `Self` from a csr slice. `csr_len` MUST be the actual length of the csr.
+        pub fn new(csr_buf: &[u8], csr_len: usize) -> CaliptraResult<Self> {
+            if csr_len >= MAX_CSR_SIZE {
+                return Err(CaliptraError::FMC_ALIAS_INVALID_CSR);
+            }
+
+            let mut _self = Self {
+                csr_len: csr_len as u32,
+                csr: [0; MAX_CSR_SIZE],
+            };
+            _self.csr[..csr_len].copy_from_slice(&csr_buf[..csr_len]);
+
+            Ok(_self)
+        }
+
+        /// Get the length of the CSR in bytes.
+        pub fn get_csr_len(&self) -> u32 {
+            self.csr_len
+        }
+
+        /// Check if the CSR was unprovisioned
+        pub fn is_unprovisioned(&self) -> bool {
+            self.csr_len == Self::UNPROVISIONED_CSR
+        }
+    }
+}
+
 impl Default for IdevIdCsr {
     fn default() -> Self {
         Self {

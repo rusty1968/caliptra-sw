@@ -464,6 +464,16 @@ impl CaliptraError {
     pub const FMC_GLOBAL_WDT_EXPIRED: CaliptraError = CaliptraError::new_const(0x000F000D);
     pub const FMC_UNKNOWN_RESET: CaliptraError = CaliptraError::new_const(0x000F000E);
 
+    /// FMC Alias CSR Errors
+    pub const FMC_ALIAS_CSR_BUILDER_INIT_FAILURE: CaliptraError =
+        CaliptraError::new_const(0x000F000F);
+    pub const FMC_ALIAS_CSR_BUILDER_BUILD_FAILURE: CaliptraError =
+        CaliptraError::new_const(0x000F0010);
+    pub const FMC_ALIAS_INVALID_CSR: CaliptraError = CaliptraError::new_const(0x000F0011);
+    pub const FMC_ALIAS_CSR_VERIFICATION_FAILURE: CaliptraError =
+        CaliptraError::new_const(0x000F0012);
+    pub const FMC_ALIAS_CSR_OVERFLOW: CaliptraError = CaliptraError::new_const(0x000F0013);
+
     /// TRNG_EXT Errors
     pub const DRIVER_TRNG_EXT_TIMEOUT: CaliptraError = CaliptraError::new_const(0x00100001);
 

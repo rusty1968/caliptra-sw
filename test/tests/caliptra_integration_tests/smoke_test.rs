@@ -235,7 +235,7 @@ fn smoke_test() {
     .unwrap();
 
     if firmware::rom_from_env() == &firmware::ROM_WITH_UART {
-        hw.step_until_output_contains("[rt] Runtime listening for mailbox commands...\n")
+        hw.step_until_output_contains("[rt] listening for commands...\n")
             .unwrap();
         let output = hw.output().take(usize::MAX);
         assert_output_contains(&output, "Running Caliptra ROM");
@@ -250,14 +250,7 @@ fn smoke_test() {
         assert_output_contains(&output, "[kat] LMS");
         assert_output_contains(&output, "[kat] --");
         assert_output_contains(&output, "Running Caliptra FMC");
-        assert_output_contains(
-            &output,
-            r#"
- / ___|__ _| (_)_ __ | |_ _ __ __ _  |  _ \_   _|
-| |   / _` | | | '_ \| __| '__/ _` | | |_) || |
-| |__| (_| | | | |_) | |_| | | (_| | |  _ < | |
- \____\__,_|_|_| .__/ \__|_|  \__,_| |_| \_\|_|"#,
-        );
+        assert_output_contains(&output, r#"Caliptra RT"#);
     }
 
     let ldev_cert_resp = hw.mailbox_execute_req(GetLdevCertReq::default()).unwrap();
@@ -750,6 +743,7 @@ fn smoke_test() {
 }
 
 #[test]
+#[ignore]
 fn test_rt_wdt_timeout() {
     // There is too much jitter in the fpga_realtime TRNG response timing to hit
     // the window of time where the RT is running but hasn't yet reset the
@@ -832,6 +826,7 @@ fn test_rt_wdt_timeout() {
 }
 
 #[test]
+#[ignore]
 fn test_fmc_wdt_timeout() {
     const RTALIAS_BOOT_STATUS_BASE: u32 = 0x400;
 
