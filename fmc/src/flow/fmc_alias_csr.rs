@@ -9,7 +9,6 @@ use caliptra_common::crypto::Ecc384KeyPair;
 
 use crate::flow::crypto::Ecdsa384SignatureAdapter;
 
-use zerocopy::FromBytes;
 use zeroize::Zeroize;
 
 use caliptra_drivers::okmutref;
@@ -18,53 +17,11 @@ use caliptra_drivers::FmcAliasCsr;
 use caliptra_x509::FmcAliasCsrTbs;
 use caliptra_x509::FmcAliasCsrTbsParams;
 
-use caliptra_common::memory_layout;
 use caliptra_drivers::{CaliptraError, CaliptraResult};
 
 use caliptra_x509::Ecdsa384CsrBuilder;
 
-use core::marker::PhantomData;
-
-#[inline(always)]
-unsafe fn ref_mut_from_addr<'a, T: FromBytes>(addr: u32) -> &'a mut T {
-    // LTO should be able to optimize out the assertions to maintain panic_is_missing
-
-    // dereferencing zero is undefined behavior
-    assert!(addr != 0);
-    assert!(addr as usize % core::mem::align_of::<T>() == 0);
-    assert!(core::mem::size_of::<u32>() == core::mem::size_of::<*const T>());
-    &mut *(addr as *mut T)
-}
-
-struct FmcAliasCsrAccessor {
-    // This field is here to ensure that Self::new() is the only way
-    // to create this type.
-    _phantom: PhantomData<()>,
-}
-impl FmcAliasCsrAccessor {
-    /// # Safety
-    ///
-    /// It is unsound for more than one of these objects to exist simultaneously.
-    /// DO NOT CALL FROM RANDOM APPLICATION CODE!
-    pub unsafe fn new() -> Self {
-        Self {
-            _phantom: Default::default(),
-        }
-    }
-
-    /// # Safety
-    ///
-    /// During the lifetime of the returned reference, it is unsound to use any
-    /// unsafe mechanism to read or write to this memory.
-    #[inline(always)]
-    pub fn get_mut(&mut self) -> &mut FmcAliasCsr {
-        // WARNING: The returned lifetime elided from `self` is critical for
-        // safety. Do not change this API without review by a Rust expert.
-        unsafe { ref_mut_from_addr(memory_layout::FMC_ALIAS_CSR_ORG) }
-    }
-}
-
-/// Retrieve DICE Input from HandsOff
+/// Retrieve DICE Output from HandOff
 ///
 /// # Arguments
 ///
@@ -91,9 +48,9 @@ fn dice_output_from_hand_off(env: &mut FmcEnv) -> CaliptraResult<DiceOutput> {
     Ok(output)
 }
 
-fn write_csr_to_peristent_storage(csr: &FmcAliasCsr) -> CaliptraResult<()> {
-    let mut accessor = unsafe { FmcAliasCsrAccessor::new() };
-    let csr_persistent_mem = accessor.get_mut();
+fn write_csr_to_peristent_storage(env: &mut FmcEnv, csr: &FmcAliasCsr) -> CaliptraResult<()> {
+    let csr_persistent_mem = &mut env.persistent_data.get_mut().fmc_alias_csr;
+
     *csr_persistent_mem = csr.clone();
 
     Ok(())
@@ -158,7 +115,7 @@ pub fn make_csr(env: &mut FmcEnv, output: &DiceOutput) -> CaliptraResult<()> {
 
     let fmc_alias_csr = FmcAliasCsr::new(&csr_buf, csr_len)?;
 
-    let result = write_csr_to_peristent_storage(&fmc_alias_csr);
+    let result = write_csr_to_peristent_storage(env, &fmc_alias_csr);
 
     csr_buf.zeroize();
 

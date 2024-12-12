@@ -8,7 +8,6 @@ use caliptra_drivers::FmcAliasCsr;
 use caliptra_error::CaliptraError;
 use caliptra_hw_model::{HwModel, ModelError};
 use caliptra_runtime::RtBootStatus;
-use openssl::x509::X509Req;
 use zerocopy::{AsBytes, FromBytes};
 
 use crate::common::{run_rt_test, RuntimeTestArgs};
@@ -39,14 +38,20 @@ fn test_get_fmc_alias_csr() {
     let csr_der = &get_fmc_alias_csr_resp.data[..get_fmc_alias_csr_resp.data_size as usize];
     assert_ne!([0; 512], csr_der);
 
+    let csr = openssl::x509::X509Req::from_der(csr_der).unwrap();
+    let csr_txt = String::from_utf8(csr.to_text().unwrap()).unwrap();
 
-    let csr = openssl::x509::X509Req::from_der(&csr_der).unwrap();
-    let csr_txt = String::from_utf8(csr.to_text().unwrap()).unwrap();    
-
-  // To update the CSR testdata:
-    std::fs::write("tests/runtime_integration_tests/test_data/fmc_alias_csr.txt", &csr_txt).unwrap();
-    std::fs::write("tests/runtime_integration_tests/test_data/fmc_alias_csr.der", &csr_der).unwrap();
-
+    // To update the CSR testdata:
+    std::fs::write(
+        "tests/runtime_integration_tests/test_data/fmc_alias_csr.txt",
+        csr_txt,
+    )
+    .unwrap();
+    std::fs::write(
+        "tests/runtime_integration_tests/test_data/fmc_alias_csr.der",
+        csr_der,
+    )
+    .unwrap();
 }
 
 #[test]
