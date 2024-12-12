@@ -20,6 +20,8 @@ mod rt_alias;
 mod tci;
 mod x509;
 
+use caliptra_drivers::ResetReason;
+
 use crate::flow::rt_alias::RtAliasLayer;
 
 use crate::fmc_env::FmcEnv;
@@ -31,8 +33,12 @@ use caliptra_drivers::CaliptraResult;
 ///
 /// * `env` - FMC Environment
 pub fn run(env: &mut FmcEnv) -> CaliptraResult<()> {
-    // Generate the Initial DevID Certificate Signing Request (CSR)
-    fmc_alias_csr::generate_csr(env)?;
+    let reset_reason = env.soc_ifc.reset_reason();
+
+    if reset_reason == ResetReason::ColdReset {
+        // Generate the FMC Alias Certificate Signing Request (CSR)
+        fmc_alias_csr::generate_csr(env)?;
+    }
 
     RtAliasLayer::run(env)
 }

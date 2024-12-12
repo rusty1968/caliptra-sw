@@ -743,7 +743,6 @@ fn smoke_test() {
 }
 
 #[test]
-#[ignore]
 fn test_rt_wdt_timeout() {
     // There is too much jitter in the fpga_realtime TRNG response timing to hit
     // the window of time where the RT is running but hasn't yet reset the
@@ -782,7 +781,7 @@ fn test_rt_wdt_timeout() {
     hw.step_until_boot_status(RUNTIME_BOOT_STATUS_READY, true);
     let fmc_target = hw.output().sink().now();
 
-    let rt_wdt_timeout_cycles = fmc_target - wdt_start - 5_000;
+    let rt_wdt_timeout_cycles = fmc_target - wdt_start - 2_000;
     drop(hw);
 
     let security_state = *caliptra_hw_model::SecurityState::default().set_debug_locked(true);

@@ -1032,7 +1032,7 @@ pub struct GetFmcAliasCsrReq {
 
 impl Request for GetFmcAliasCsrReq {
     const ID: CommandId = CommandId::GET_FMC_ALIAS_CSR;
-    type Resp = GetIdevCsrResp;
+    type Resp = GetFmcAliasCsrResp;
 }
 
 #[repr(C)]
@@ -1042,6 +1042,17 @@ pub struct GetFmcAliasCsrResp {
     pub data_size: u32,
     pub data: [u8; Self::DATA_MAX_SIZE],
 }
+
+impl Default for GetFmcAliasCsrResp {
+    fn default() -> Self {
+        Self {
+            hdr: MailboxRespHeader::default(),
+            data_size: 0,
+            data: [0u8; Self::DATA_MAX_SIZE],
+        }
+    }
+}
+
 impl GetFmcAliasCsrResp {
     pub const DATA_MAX_SIZE: usize = 512;
 }

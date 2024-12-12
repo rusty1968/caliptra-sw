@@ -448,6 +448,9 @@ impl CaliptraError {
     pub const RUNTIME_GET_IDEV_ID_UNSUPPORTED_ROM: CaliptraError =
         CaliptraError::new_const(0x000E0052);
 
+    pub const RUNTIME_GET_FMC_CSR_UNPROVISIONED: CaliptraError =
+        CaliptraError::new_const(0x000E0053);
+
     /// FMC Errors
     pub const FMC_GLOBAL_NMI: CaliptraError = CaliptraError::new_const(0x000F0001);
     pub const FMC_GLOBAL_EXCEPTION: CaliptraError = CaliptraError::new_const(0x000F0002);

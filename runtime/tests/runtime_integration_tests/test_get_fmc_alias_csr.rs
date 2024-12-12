@@ -1,42 +1,64 @@
 // Licensed under the Apache-2.0 license
 
+use crate::common::get_certs;
+use caliptra_api::mailbox::GetFmcAliasCsrReq;
 use caliptra_api::SocManager;
 use caliptra_builder::{get_ci_rom_version, CiRomVersion};
-use caliptra_common::mailbox_api::{CommandId, GetIdevCsrResp, MailboxReqHeader};
-use caliptra_drivers::{IdevIdCsr, MfgFlags};
+use caliptra_common::mailbox_api::{CommandId, GetRtAliasCertReq, MailboxReqHeader};
+use caliptra_drivers::{FmcAliasCsr, MAX_CSR_SIZE};
 use caliptra_error::CaliptraError;
+use caliptra_hw_model::DefaultHwModel;
 use caliptra_hw_model::{HwModel, ModelError};
 use caliptra_runtime::RtBootStatus;
-use openssl::x509::X509Req;
-use zerocopy::{AsBytes, FromBytes};
-use caliptra_common::mailbox_api::GetFmcAliasCsrResp;
-use caliptra_drivers::FmcAliasCsr;
+use zerocopy::AsBytes;
 
 use crate::common::{run_rt_test, RuntimeTestArgs};
 
 #[test]
 fn test_get_fmc_alias_csr() {
+    fn verify_rt_cert(
+        model: &mut DefaultHwModel,
+        pub_key: openssl::pkey::PKey<openssl::pkey::Public>,
+    ) {
+        let get_rt_alias_cert_resp = get_certs::<GetRtAliasCertReq>(model);
+        assert_ne!(0, get_rt_alias_cert_resp.data_size);
+
+        let der = &get_rt_alias_cert_resp.data[..get_rt_alias_cert_resp.data_size as usize];
+        let cert = openssl::x509::X509::from_der(der).unwrap();
+
+        assert!(
+            cert.verify(&pub_key).unwrap(),
+            "Invalid public key. Unable to verify RT Alias Cert",
+        );
+    }
+    fn get_fmc_alias_csr(model: &mut DefaultHwModel) -> openssl::x509::X509Req {
+        let get_fmc_alias_csr_resp = get_certs::<GetFmcAliasCsrReq>(model);
+
+        assert_ne!(
+            FmcAliasCsr::UNPROVISIONED_CSR,
+            get_fmc_alias_csr_resp.data_size
+        );
+        assert_ne!(0, get_fmc_alias_csr_resp.data_size);
+
+        let csr_der = &get_fmc_alias_csr_resp.data[..get_fmc_alias_csr_resp.data_size as usize];
+        let csr = openssl::x509::X509Req::from_der(csr_der).unwrap();
+
+        assert_ne!([0; MAX_CSR_SIZE], csr_der);
+
+        csr
+    }
     let mut model = run_rt_test(RuntimeTestArgs::default());
 
-    let payload = MailboxReqHeader {
-        chksum: caliptra_common::checksum::calc_checksum(u32::from(CommandId::GET_FMC_ALIAS_CSR), &[]),
-    };
+    let csr = get_fmc_alias_csr(&mut model);
 
-    let result = model.mailbox_execute(CommandId::GET_FMC_ALIAS_CSR.into(), payload.as_bytes());
+    let pubkey = csr.public_key().unwrap();
+    assert!(
+        csr.verify(&pubkey).unwrap(),
+        "Invalid public key. Unable to verify FMC Alias CSR",
+    );
 
-    let response = result.unwrap().unwrap();
-
-    let get_fmc_alias_csr_resp = GetFmcAliasCsrResp::read_from(response.as_bytes()).unwrap();
-
-    assert_ne!(FmcAliasCsr::UNPROVISIONED_CSR, get_fmc_alias_csr_resp.data_size);
-    assert_ne!(0, get_fmc_alias_csr_resp.data_size);
-
-    let csr_bytes = &get_fmc_alias_csr_resp.data[..get_fmc_alias_csr_resp.data_size as usize];
-    assert_ne!([0; 512], csr_bytes);
-
-    assert!(X509Req::from_der(csr_bytes).is_ok());
+    verify_rt_cert(&mut model, pubkey);
 }
-
 
 #[test]
 fn test_missing_csr() {
