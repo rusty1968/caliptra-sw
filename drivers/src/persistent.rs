@@ -21,6 +21,9 @@ use crate::{
     FirmwareHandoffTable,
 };
 
+#[cfg(feature = "fmc")]
+use crate::FmcAliasCsr;
+
 #[cfg(feature = "runtime")]
 use crate::pcr_reset::PcrResetCounter;
 
@@ -228,6 +231,12 @@ pub struct PersistentData {
 
     pub idevid_csr: IdevIdCsr,
     reserved10: [u8; memory_layout::IDEVID_CSR_SIZE as usize - size_of::<IdevIdCsr>()],
+
+    #[cfg(feature = "fmc")]
+    pub fmc_alias_csr: FmcAliasCsr,
+
+    #[cfg(feature = "fmc")]
+    reserved11: [u8; memory_layout::FMC_ALIAS_CSR_SIZE as usize - size_of::<FmcAliasCsr>()],
 }
 
 impl PersistentData {
@@ -260,9 +269,28 @@ impl PersistentData {
                 addr_of!((*P).idevid_csr) as u32,
                 memory_layout::IDEVID_CSR_ORG
             );
+
+            assert_eq!(
+                addr_of!((*P).idevid_csr) as u32,
+                memory_layout::IDEVID_CSR_ORG
+            );
+
+            #[cfg(not(feature = "fmc"))]
             assert_eq!(
                 P.add(1) as u32,
                 memory_layout::IDEVID_CSR_ORG + memory_layout::IDEVID_CSR_SIZE
+            );
+
+            #[cfg(feature = "fmc")]
+            assert_eq!(
+                addr_of!((*P).fmc_alias_csr) as u32,
+                memory_layout::FMC_ALIAS_CSR_ORG
+            );
+
+            #[cfg(feature = "fmc")]
+            assert_eq!(
+                P.add(1) as u32,
+                memory_layout::FMC_ALIAS_CSR_ORG + memory_layout::FMC_ALIAS_CSR_SIZE
             );
         }
     }
