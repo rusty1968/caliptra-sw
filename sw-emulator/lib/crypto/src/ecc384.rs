@@ -232,18 +232,30 @@ impl Ecc384 {
         signature_reversed.r.to_little_endian();
         signature_reversed.s.to_little_endian();
 
-        let verifying_key = VerifyingKey::from_encoded_point(&pub_key_reversed.into()).unwrap();
-        let result =
-            verifying_key.verify_prehash(&hash_reversed, &Signature::from(signature_reversed));
-        if result.is_ok() {
-            signature.r
-        } else {
-            // Note: We do not have access to the failed 'r'. Hence we reverse the original 'r'
-            // value and flip the bits of each byte. This implementation should be good for
-            // emulating the ECC-384 hardware
-            let mut r = signature.r;
-            r.iter_mut().for_each(|r| *r = !*r);
-            r
+        match VerifyingKey::from_encoded_point(&pub_key_reversed.into()) {
+            Ok(verifying_key) => {
+                // Use verifying_key here
+                let result = verifying_key
+                    .verify_prehash(&hash_reversed, &Signature::from(signature_reversed));
+                if result.is_ok() {
+                    signature.r
+                } else {
+                    // Note: We do not have access to the failed 'r'. Hence we reverse the original 'r'
+                    // value and flip the bits of each byte. This implementation should be good for
+                    // emulating the ECC-384 hardware
+                    let mut r = signature.r;
+                    r.iter_mut().for_each(|r| *r = !*r);
+                    r
+                }
+            }
+            Err(e) => {
+                    // Note: We do not have access to the failed 'r'. Hence we reverse the original 'r'
+                    // value and flip the bits of each byte. This implementation should be good for
+                    // emulating the ECC-384 hardware
+                    let mut r = signature.r;
+                    r.iter_mut().for_each(|r| *r = !*r);
+                    r
+            }
         }
     }
 }
