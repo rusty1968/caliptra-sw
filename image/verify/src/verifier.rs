@@ -571,7 +571,7 @@ impl<Env: ImageVerificationEnv> ImageVerifier<Env> {
                             CaliptraError::IMAGE_VERIFIER_ERR_VENDOR_LMS_VERIFY_FAILURE
                         })?;
                 let pub_key_digest = HashValue::from(lms_pub_key.digest);
-                if candidate_key != pub_key_digest {
+                if candidate_key == pub_key_digest {
                     return Err(CaliptraError::IMAGE_VERIFIER_ERR_VENDOR_LMS_SIGNATURE_INVALID);
                 } else {
                     caliptra_cfi_lib::cfi_assert_eq_6_words(&candidate_key.0, &pub_key_digest.0);
