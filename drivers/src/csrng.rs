@@ -28,6 +28,9 @@ use caliptra_registers::soc_ifc::{self, SocIfcReg};
 
 use core::mem::MaybeUninit;
 
+use rand_core::Error as RandCoreError;
+use rand_core::{CryptoRng, RngCore};
+
 // https://opentitan.org/book/hw/ip/csrng/doc/theory_of_operation.html#command-description
 const MAX_SEED_WORDS: usize = 12;
 const WORDS_PER_BLOCK: usize = 4;
@@ -423,3 +426,42 @@ fn set_health_check_thresholds(
         });
     }
 }
+
+impl RngCore for Csrng {
+    fn next_u32(&mut self) -> u32 {
+        let mut result = MaybeUninit::<u32>::uninit();
+        let dest = result.as_mut_ptr();
+        unsafe {
+            wait::until(|| self.csrng.regs().genbits_vld().read().genbits_vld());
+            dest.write(self.csrng.regs().genbits().read());
+            result.assume_init()
+        }
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        let mut result = MaybeUninit::<[u32; 2]>::uninit();
+        let dest = result.as_mut_ptr() as *mut u32;
+        unsafe {
+            wait::until(|| self.csrng.regs().genbits_vld().read().genbits_vld());
+            dest.add(0).write(self.csrng.regs().genbits().read());
+            dest.add(1).write(self.csrng.regs().genbits().read());
+            let result = result.assume_init();
+            ((result[0] as u64) << 32) | (result[1] as u64)
+        }
+    }
+
+    fn fill_bytes(&mut self, dest: &mut [u8]) {
+        let result = self.generate12().unwrap();
+        for (i, chunk) in dest.chunks_mut(4).enumerate() {
+            let bytes = result[i].to_le_bytes();
+            chunk.copy_from_slice(&bytes[..chunk.len()]);
+        }
+    }
+
+    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), RandCoreError> {
+        self.fill_bytes(dest);
+        Ok(())
+    }
+}
+
+impl CryptoRng for Csrng {}
