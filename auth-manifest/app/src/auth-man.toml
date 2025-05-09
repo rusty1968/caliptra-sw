@@ -1,16 +1,16 @@
 # Licensed under the Apache-2.0 license
 
 [vendor_fw_key_config]
-ecc_pub_key = "vnd-pub-key-3.pem"
-ecc_priv_key = "vnd-priv-key-3.pem"
-lms_pub_key = "vnd-lms-pub-key-3.pem"
-lms_priv_key = "vnd-lms-priv-key-3.pem"
+ecc_pub_key = "vnd-pub-key-0.pem"
+ecc_priv_key = "vnd-priv-key-0.pem"
+lms_pub_key = "vnd-lms-pub-key-0.pem"
+lms_priv_key = "vnd-lms-priv-key-0.pem"
 
 [vendor_man_key_config]
-ecc_pub_key = "vnd-pub-key-3.pem"
-ecc_priv_key = "vnd-priv-key-3.pem"
-lms_pub_key = "vnd-lms-pub-key-3.pem"
-lms_priv_key = "vnd-lms-priv-key-3.pem"
+ecc_pub_key = "vnd-pub-key-0.pem"
+ecc_priv_key = "vnd-priv-key-0.pem"
+lms_pub_key = "vnd-lms-pub-key-0.pem"
+lms_priv_key = "vnd-lms-priv-key-0.pem"
 
 [owner_fw_key_config]
 ecc_pub_key = "own-pub-key.pem"
@@ -24,20 +24,51 @@ ecc_priv_key = "own-priv-key.pem"
 lms_pub_key = "own-lms-pub-key.pem"
 lms_priv_key = "own-lms-priv-key.pem"
 
+# CONDO/Overlay
 [[image_metadata_list]]
 digest = "C120EED0004B4CF6C344B00F5F501E7B7167C7010B6EA1D36AEE20CC90F1AE373DF1EC91C9AD9E0A5A969326A54E2517"
 source = 1
-fw_id = 1
-ignore_auth_check = false
-
-[[image_metadata_list]]
-digest = "99514329186b2f6ae4a1329e7ee6c610a729636335174ac6b740f9028396fcc803d0e93863a7c3d90f86beee782f4f3f"
-source = 2
-fw_id = 2
+fw_id = 0x9D
 ignore_auth_check = true
 
+# ARTC SPL Table
+[[image_metadata_list]]
+digest = "99514329186b2f6ae4a1329e7ee6c610a729636335174ac6b740f9028396fcc803d0e93863a7c3d90f86beee782f4f3f"
+source = 1
+fw_id = 0x1CD
+ignore_auth_check = true
+
+# ART FMC
 [[image_metadata_list]]
 digest = "9B514329186b2f6ae4a1329e7ee6c610a729636335174ac6b740f9028396fcc803d0e93863a7c3d90f86beee782f4f3f"
-source = 2
-fw_id = 3
+source = 1
+fw_id = 0xAB
+ignore_auth_check = false
+
+# ART FMC... also...
+[[image_metadata_list]]
+digest = "9B514329186b2f6ae4a1329e7ee6c610a729636335174ac6b740f9028396fcc803d0e93863a7c3d90f86beee782f4f3f"
+source = 1
+fw_id = 0x1E8
+ignore_auth_check = false
+
+# LIBSEC
+[[image_metadata_list]]
+digest = "9B514329186b2f6ae4a1329e7ee6c610a729636335174ac6b740f9028396fcc803d0e93863a7c3d90f86beee782f4f3f"
+source = 1
+fw_id = 0xAA
+ignore_auth_check = false
+
+# LIBSEC also
+[[image_metadata_list]]
+digest = "9B514329186b2f6ae4a1329e7ee6c610a729636335174ac6b740f9028396fcc803d0e93863a7c3d90f86beee782f4f3f"
+source = 1
+fw_id = 0x1CB
+ignore_auth_check = false
+
+# ASP FMC
+[[image_metadata_list]]
+digest = "9B514329186b2f6ae4a1329e7ee6c610a729636335174ac6b740f9028396fcc803d0e93863a7c3d90f86beee782f4f3f"
+source = 1
+fw_id = 0x1
 ignore_auth_check = false
