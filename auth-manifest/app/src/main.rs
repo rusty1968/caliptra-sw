@@ -112,10 +112,10 @@ pub(crate) fn run_auth_man_cmd(args: &ArgMatches) -> anyhow::Result<()> {
         vendor_man_key_info: config::vendor_config_from_file(
             key_dir,
             &config.vendor_man_key_config,
-        )?,
-        owner_man_key_info: config::owner_config_from_file(key_dir, &config.owner_man_key_config)?,
-        vendor_fw_key_info: config::vendor_config_from_file(key_dir, &config.vendor_fw_key_config)?,
-        owner_fw_key_info: config::owner_config_from_file(key_dir, &config.owner_fw_key_config)?,
+        ).expect("Reading vendor man key config"),
+        owner_man_key_info: config::owner_config_from_file(key_dir, &config.owner_man_key_config).expect("Reading owner man key config"),
+        vendor_fw_key_info: config::vendor_config_from_file(key_dir, &config.vendor_fw_key_config).expect("Reading vendor FW key config"),
+        owner_fw_key_info: config::owner_config_from_file(key_dir, &config.owner_fw_key_config).expect("Reading owner fw key config"),
         image_metadata_list: config::image_metadata_config_from_file(&config.image_metadata_list)?,
     };
 

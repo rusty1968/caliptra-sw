@@ -80,11 +80,13 @@ fn key_config_from_file(
     let mut priv_keys = AuthManifestPrivKeys::default();
     if let Some(pem_file) = &config.ecc_priv_key {
         let priv_key_path = path.join(pem_file);
+        println!("83 {}", priv_key_path.display());
         priv_keys.ecc_priv_key = Crypto::ecc_priv_key_from_pem(&priv_key_path)?;
     }
 
     if let Some(pem_file) = &config.lms_priv_key {
         let priv_key_path = path.join(pem_file);
+        println!("89 {}", priv_key_path.display());
         priv_keys.lms_priv_key = lms_priv_key_from_pem(&priv_key_path)?;
     }
 
@@ -102,6 +104,7 @@ pub(crate) fn vendor_config_from_file(
     path: &Path,
     config: &AuthManifestKeyConfigFromFile,
 ) -> anyhow::Result<AuthManifestGeneratorKeyConfig> {
+    println!("vendor_config_from_file: {}\n", path.display());
     key_config_from_file(path, config)
 }
 
@@ -109,6 +112,7 @@ pub(crate) fn owner_config_from_file(
     path: &Path,
     config: &Option<AuthManifestKeyConfigFromFile>,
 ) -> anyhow::Result<Option<AuthManifestGeneratorKeyConfig>> {
+    println!("owner_config_from_file: {}\n", path.display());
     if let Some(config) = config {
         let gen_config = key_config_from_file(path, config)?;
         Ok(Some(gen_config))
@@ -124,6 +128,7 @@ pub(crate) fn image_metadata_config_from_file(
     let mut fw_ids: Vec<u32> = Vec::new();
 
     for image in config {
+        println!("image_metadata_config_from_file: FWID: {:04x}", &image.fw_id);
         // Check if the firmware ID is already present in the list.
         if fw_ids.contains(&image.fw_id) {
             return Err(anyhow::anyhow!(

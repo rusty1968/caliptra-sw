@@ -35,6 +35,7 @@ impl<Crypto: ImageGeneratorCrypto> AuthManifestGenerator<Crypto> {
     ) -> anyhow::Result<AuthorizationManifest> {
         let mut auth_manifest = AuthorizationManifest::default();
 
+        println!("\nImage metadata list length: {}\n", config.image_metadata_list.len());
         if config.image_metadata_list.len() > AUTH_MANIFEST_IMAGE_METADATA_MAX_COUNT {
             eprintln!(
                 "Unsupported image metadata count, only {} entries supported.",
