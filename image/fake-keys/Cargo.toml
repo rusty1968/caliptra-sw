@@ -12,6 +12,7 @@ caliptra-image-gen.workspace = true
 caliptra-image-types.workspace = true
 caliptra-lms-types.workspace = true
 zerocopy.workspace = true
+caliptra-image-crypto.workspace = true
 
 [dev-dependencies]
 caliptra-image-crypto.workspace = true

@@ -7,6 +7,7 @@ use caliptra_image_types::{
     IMAGE_LMS_TREE_TYPE,
 };
 use caliptra_lms_types::bytes_to_words_6;
+use caliptra_image_crypto::from_hw_format;
 
 #[cfg(test)]
 use std::fs;
@@ -14,6 +15,13 @@ use std::fs;
 use std::io::Write; // bring trait into scope
 #[cfg(test)]
 use zerocopy::IntoBytes;
+
+/// Generated with
+///
+/// ```no_run
+use caliptra_image_crypto::OsslCrypto;
+use std::path::PathBuf;
+use caliptra_image_gen::ImageGeneratorCrypto;
 
 /// Generated with
 ///
@@ -374,8 +382,18 @@ pub const OWNER_CONFIG: ImageGeneratorOwnerConfig = ImageGeneratorOwnerConfig {
     epoch: [0u8; 2],
 };
 
+
+
+fn print_public_key(name: &str, path: &str) {
+    let key = OsslCrypto::ecc_pub_key_from_pem(&PathBuf::from(path)).unwrap();
+    println!("pub const {name}_PUBLIC: ImageEccPubKey = {key:#010x?};");
+}
+fn print_private_key(name: &str, path: &str) {
+    let key = OsslCrypto::ecc_priv_key_from_pem(&PathBuf::from(path)).unwrap();
+    println!("pub const {name}_PRIVATE: ImageEccPrivKey = {key:#010x?};");
+}
+
 #[test]
-#[ignore]
 fn test_write_lms_keys() {
     for i in 0..VENDOR_PRIVATE_KEYS.lms_priv_keys.len() {
         let mut file = fs::OpenOptions::new()
@@ -420,4 +438,89 @@ fn test_write_lms_keys() {
         .unwrap();
     file.write_all(OWNER_PUBLIC_KEYS.lms_pub_key.as_bytes())
         .unwrap();
+
+    let ecdsa_asn1_privkey_header: [u8; 8] = [0x30, 0x81, 0xA4, 0x02, 0x01, 0x01, 0x04, 0x30];
+    let ecdsa_asn1_privkey_middle: [u8; 15] = [0xA0, 0x07, 0x06, 0x05, 0x2B, 0x81, 0x04, 0x00, 0x22, 0xA1, 0x64, 0x03, 0x62, 0x00, 0x04];
+    let ecdsa_asn1_pubkey_header: [u8; 24] = [0x30, 0x76, 0x30, 0x10, 0x06, 0x07, 0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x02, 0x01, 0x06, 0x05, 0x2B, 0x81, 0x04, 0x00, 0x22, 0x03, 0x62, 0x00, 0x04];
+
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open("../../target/riscv32imc-unknown-none-elf/firmware/own-pub-key.der")
+        .unwrap();
+    file.write(&ecdsa_asn1_pubkey_header).unwrap();
+    file.write_all(&from_hw_format(&OWNER_PUBLIC_KEYS.ecc_pub_key.x)).unwrap();
+    file.write_all(&from_hw_format(&OWNER_PUBLIC_KEYS.ecc_pub_key.y)).unwrap();
+
+    
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open("../../target/riscv32imc-unknown-none-elf/firmware/own-priv-key.der")
+        .unwrap();
+        
+    file.write(&ecdsa_asn1_privkey_header).unwrap();
+    file.write_all(&from_hw_format(&OWNER_PRIVATE_KEYS.ecc_priv_key)).unwrap();
+    file.write(&ecdsa_asn1_privkey_middle).unwrap();
+    file.write_all(&from_hw_format(&OWNER_PUBLIC_KEYS.ecc_pub_key.x)).unwrap();
+    file.write_all(&from_hw_format(&OWNER_PUBLIC_KEYS.ecc_pub_key.y)).unwrap();
+
+    
+    for i in 0..VENDOR_PUBLIC_KEYS.ecc_pub_keys.len() {
+        let mut file = fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(format!(
+                "../../target/riscv32imc-unknown-none-elf/firmware/vnd-pub-key-{}.der",
+                i
+            ))
+            .unwrap();
+        file.write(&ecdsa_asn1_pubkey_header).unwrap();
+        file.write_all(&from_hw_format(&VENDOR_PUBLIC_KEYS.ecc_pub_keys[i].x)).unwrap();
+        file.write_all(&from_hw_format(&VENDOR_PUBLIC_KEYS.ecc_pub_keys[i].y)).unwrap();
+    }
+    //let mut file = fs::OpenOptions::new()
+    //    .create(true)
+    //    .write(true)
+    //    .truncate(true)
+    //    .open("../../target/riscv32imc-unknown-none-elf/firmware/vnd-pub-key-3.der")
+    //    .unwrap();
+    //file.write(&ecdsa_asn1_pubkey_header).unwrap();
+    //file.write_all(VENDOR_ECC_KEY_3_PUBLIC.as_bytes())
+    //    .unwrap();
+
+    
+    for i in 0..VENDOR_PUBLIC_KEYS.ecc_pub_keys.len() {
+        let mut file = fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(format!(
+                "../../target/riscv32imc-unknown-none-elf/firmware/vnd-priv-key-{}.der",
+                i
+            ))
+            .unwrap();
+
+        file.write(&ecdsa_asn1_privkey_header).unwrap();
+        file.write_all(&from_hw_format(&VENDOR_PRIVATE_KEYS.ecc_priv_keys[i])).unwrap();
+        file.write(&ecdsa_asn1_privkey_middle).unwrap();
+        file.write_all(&from_hw_format(&VENDOR_PUBLIC_KEYS.ecc_pub_keys[i].x)).unwrap();
+        file.write_all(&from_hw_format(&VENDOR_PUBLIC_KEYS.ecc_pub_keys[i].y)).unwrap();
+    }
+    //let mut file = fs::OpenOptions::new()
+    //    .create(true)
+    //    .write(true)
+    //    .truncate(true)
+    //    .open("../../target/riscv32imc-unknown-none-elf/firmware/vnd-priv-key-3.der")
+    //    .unwrap();
+    //    
+    //file.write(&ecdsa_asn1_privkey_header).unwrap();
+    //file.write_all(VENDOR_ECC_KEY_3_PRIVATE.as_bytes()).unwrap();
+    //file.write(&ecdsa_asn1_privkey_middle).unwrap();
+    //file.write_all(VENDOR_ECC_KEY_3_PUBLIC.as_bytes()).unwrap();
+    //print_private_key("Read from pem VENDOR_KEY_1", "../../measurement_manifest_workspace/vnd-priv-key-1.pem");
+    //print_public_key("Read from pem VENDOR_KEY_1", "../../measurement_manifest_workspace/vnd-pub-key-1.pem");
 }
