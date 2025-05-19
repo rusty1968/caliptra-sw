@@ -184,6 +184,7 @@ regex = "1.10.2"
 ecdsa = { version = "0.16.9", features = ["pem"]}
 sec1 = { version = "0.7.3" }
 rand_core = "0.6.3"
+proposed-traits = { git = "https://github.com/rusty1968/proposed_traits.git", rev = "c95b8b738e8dd65c946d80b11c0eb5482a605288" }
 
 [profile.firmware]
 inherits = "release"
