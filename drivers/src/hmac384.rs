@@ -23,6 +23,12 @@ use caliptra_cfi_derive::cfi_impl_fn;
 use caliptra_registers::hmac::HmacReg;
 use core::usize;
 
+use proposed_traits::mac::Error as MacError;
+use proposed_traits::mac::ErrorKind as MacErrorKind;
+use proposed_traits::mac::ErrorType as MacErrorType;
+use proposed_traits::mac::MacOp;
+use proposed_traits::mac::MacCtrl;
+
 const HMAC384_BLOCK_SIZE_BYTES: usize = 128;
 const HMAC384_BLOCK_LEN_OFFSET: usize = 112;
 const HMAC384_MAX_DATA_SIZE: usize = 1024 * 1024;
@@ -461,6 +467,81 @@ enum Hmac384OpState {
 
     /// Final state
     Final,
+}
+
+#[derive(Debug)]
+pub struct Hmac384Error(pub CaliptraError);
+
+impl From<CaliptraError> for Hmac384Error {
+    fn from(error: CaliptraError) -> Self {
+        Hmac384Error(error)
+    }
+}
+
+impl MacError for Hmac384Error {
+    fn kind(&self) -> MacErrorKind {
+        match self.0 {
+            CaliptraError::DRIVER_HMAC384_INVALID_STATE => MacErrorKind::InvalidState,
+            CaliptraError::DRIVER_HMAC384_MAX_DATA => MacErrorKind::InvalidInputLength,
+            CaliptraError::DRIVER_HMAC384_INVALID_SLICE => MacErrorKind::InvalidInputLength,
+            CaliptraError::DRIVER_HMAC384_INDEX_OUT_OF_BOUNDS => MacErrorKind::InvalidInputLength,
+            _ => MacErrorKind::HardwareFailure, // Default case for any other errors
+        }
+    }
+}
+
+impl MacErrorType for Hmac384Op<'_> {
+    type Error = Hmac384Error;
+}
+
+impl<'a> MacOp for Hmac384Op<'a> {
+    fn update(&mut self, input: &[u8]) -> Result<(), Self::Error> {
+        self.update(input).map_err(|e| e.into())
+    }
+
+    fn finalize(&mut self, _: &mut [u8]) -> Result<(), Self::Error> {
+        self.finalize().map_err(|e| e.into())
+    }
+}
+
+pub struct HmacInitParams<'a> {
+    pub key: &'a Hmac384Key<'a>,
+    pub trng: &'a mut Trng,
+    pub tag: Hmac384Tag<'a>,
+}
+
+impl MacErrorType for Hmac384 {
+    type Error = Hmac384Error;
+}
+
+impl MacCtrl for Hmac384 {
+    type InitParams<'a> = HmacInitParams<'a>;
+    type OpContext<'a> = Hmac384Op<'a>;
+
+    /// Init instance of the crypto function with the given context.
+    ///
+    /// # Parameters
+    ///
+    /// - `init_params`: The context or configuration parameters for the crypto function.
+    ///
+    /// # Returns
+    ///
+    /// A new instance of the hash function.
+    fn init<'a>(
+        &'a mut self,
+        init_params: Self::InitParams<'a>,
+    ) -> Result<Self::OpContext<'a>, Self::Error> {
+        self.hmac_init(init_params.key, init_params.trng, init_params.tag).map_err(|e| e.into())
+    }
+
+    /// Reset instance to its initial state.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` indicating success or failure. On success, returns `Ok(())`. On failure, returns a `CryptoError`.    
+    fn reset(&mut self) -> Result<(), Self::Error> {
+        Err(Hmac384Error(CaliptraError::DRIVER_HMAC384_INVALID_STATE))
+    }
 }
 
 /// HMAC multi step operation

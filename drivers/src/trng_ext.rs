@@ -44,7 +44,6 @@ fn convert_to_u32(byte_slice: &[u8]) -> u32 {
     u32::from_ne_bytes(array)
 }
 
-
 fn convert_to_u64(byte_slice: &[u8]) -> u64 {
     let array: [u8; 8] = match byte_slice.get(..8) {
         Some(subslice) => subslice.try_into().unwrap_or([0; 8]),
@@ -52,7 +51,6 @@ fn convert_to_u64(byte_slice: &[u8]) -> u64 {
     };
     u64::from_ne_bytes(array)
 }
-    
 
 impl rand_core::RngCore for TrngExt {
     fn next_u32(&mut self) -> u32 {
@@ -68,11 +66,11 @@ impl rand_core::RngCore for TrngExt {
             Err(_) => 0,
         }
     }
-    
+
     fn fill_bytes(&mut self, dest: &mut [u8]) {
-         if self.try_fill_bytes(dest).is_err() {
+        if self.try_fill_bytes(dest).is_err() {
             dest.fill(0);
-         }
+        }
     }
     fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), RandCoreError> {
         match self.generate() {
@@ -89,6 +87,4 @@ impl rand_core::RngCore for TrngExt {
             }
         }
     }
-    
-    
 }
