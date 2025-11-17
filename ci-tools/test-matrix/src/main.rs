@@ -180,8 +180,11 @@ pub struct RunInfo {
 }
 impl RunInfo {
     fn from_run(run: &Run) -> Self {
+        // Determine version based on workflow name or branch
         let branch_version = if run.head_branch == "main-2.x" {
             "2.x".to_string()
+        } else if run.name.contains("2.1") {
+            "2.1".to_string()
         } else {
             "1.x".to_string()
         };
@@ -211,7 +214,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .send()
         .await?;
     
-    // Fetch 2.x workflow runs
+    // Fetch 2.x workflow runs (on main-2.x branch)
     let runs_2x = octocrab
         .workflows(ORG, REPO)
         .list_runs("nightly-release-2.x.yml")
@@ -219,9 +222,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .send()
         .await?;
     
+    // Fetch 2.1 workflow runs (on main branch)
+    let runs_2_1 = octocrab
+        .workflows(ORG, REPO)
+        .list_runs("nightly-2.1.yml")
+        .branch("main")
+        .send()
+        .await?;
+    
     // Merge and sort by created_at descending (newest first)
     let mut all_runs: Vec<Run> = runs_1x.items.into_iter()
         .chain(runs_2x.items.into_iter())
+        .chain(runs_2_1.items.into_iter())
         .collect();
     all_runs.sort_by(|a, b| b.created_at.cmp(&a.created_at));
 
