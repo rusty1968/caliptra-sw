@@ -220,3 +220,12 @@ jobs:
         with:
           name: release-info-2_x
           path: /tmp/release-info-2_x
+
+  publish-website:
+    name: Publish https://caliptra-sw.github.io/
+    needs:
+      create-release-2_x
+    uses: ./.github/workflows/publish-website.yml
+    permissions:
+      pages: write
+      id-token: write

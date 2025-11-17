@@ -176,12 +176,19 @@ impl TestRun {
 pub struct RunInfo {
     pub id: String,
     pub display_name: String,
+    pub branch_version: String,
 }
 impl RunInfo {
     fn from_run(run: &Run) -> Self {
+        let branch_version = if run.head_branch == "main-2.x" {
+            "2.x".to_string()
+        } else {
+            "1.x".to_string()
+        };
         RunInfo {
             id: run.created_at.format("%F-%H%M%S").to_string(),
-            display_name: run.created_at.format("%F %H:%M:%S").to_string(),
+            display_name: format!("{} ({})", run.created_at.format("%F %H:%M:%S"), branch_version),
+            branch_version,
         }
     }
 }
@@ -195,23 +202,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     const REPO: &str = "caliptra-sw";
 
     let octocrab = Octocrab::builder().personal_token(token).build()?;
-    let release_runs = octocrab
+    
+    // Fetch 1.x workflow runs
+    let runs_1x = octocrab
         .workflows(ORG, REPO)
         .list_runs("nightly-release.yml")
         .branch("main")
         .send()
         .await?;
+    
+    // Fetch 2.x workflow runs
+    let runs_2x = octocrab
+        .workflows(ORG, REPO)
+        .list_runs("nightly-release-2.x.yml")
+        .branch("main-2.x")
+        .send()
+        .await?;
+    
+    // Merge and sort by created_at descending (newest first)
+    let mut all_runs: Vec<Run> = runs_1x.items.into_iter()
+        .chain(runs_2x.items.into_iter())
+        .collect();
+    all_runs.sort_by(|a, b| b.created_at.cmp(&a.created_at));
 
     const NUM_RUNS: usize = 6;
 
-    let run_infos: Vec<RunInfo> = release_runs
-        .items
+    let run_infos: Vec<RunInfo> = all_runs
         .iter()
         .take(NUM_RUNS)
         .map(RunInfo::from_run)
         .collect();
 
-    for (index, run) in release_runs.into_iter().take(NUM_RUNS).enumerate() {
+    for (index, run) in all_runs.into_iter().take(NUM_RUNS).enumerate() {
         let artifacts = all_items(
             &octocrab,
             octocrab

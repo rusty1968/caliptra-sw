@@ -65,3 +65,22 @@ pre {
     font-size: 12px;
     line-height: 20px;
 }
+
+.version-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    margin-right: 8px;
+    border-radius: 4px;
+    font-size: 0.85em;
+    font-weight: bold;
+}
+
+.version-1\.x {
+    background-color: #2ea44f;
+    color: white;
+}
+
+.version-2\.x {
+    background-color: #0969da;
+    color: white;
+}
